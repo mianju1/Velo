@@ -73,12 +73,19 @@ pub fn target_from_window<R: tauri::Runtime>(
     macos::target_from_window(window)
 }
 
+#[cfg(target_os = "windows")]
+pub fn target_from_window<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+) -> AppResult<VideoSurfaceTarget> {
+    windows::target_from_window(window)
+}
+
 #[cfg(target_os = "macos")]
 pub fn current_size_for_view(ns_view: usize, fallback: VideoSurfaceSize) -> VideoSurfaceSize {
     macos::current_size_for_view(ns_view, fallback)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn target_from_window<R: tauri::Runtime>(
     _window: &tauri::WebviewWindow<R>,
 ) -> AppResult<VideoSurfaceTarget> {
@@ -401,7 +408,39 @@ mod macos {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(target_os = "windows")]
+mod windows {
+    use super::{surface_error, VideoSurfaceTarget};
+    use crate::errors::AppResult;
+
+    pub fn target_from_window<R: tauri::Runtime>(
+        window: &tauri::WebviewWindow<R>,
+    ) -> AppResult<VideoSurfaceTarget> {
+        let hwnd = window.hwnd().map_err(|error| {
+            surface_error(
+                "video_surface_window_handle_failed",
+                "无法获取主窗口原生句柄",
+                Some(error.to_string()),
+            )
+        })?;
+        let size = window.inner_size().map_err(|error| {
+            surface_error(
+                "video_surface_window_size_failed",
+                "无法获取主窗口尺寸",
+                Some(error.to_string()),
+            )
+        })?;
+
+        Ok(VideoSurfaceTarget::new(
+            hwnd.0 as usize,
+            0,
+            size.width.max(1),
+            size.height.max(1),
+        ))
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn surface_error(code: &str, message: &str, detail: Option<String>) -> AppError {
     AppError::new(code, message, detail, true)
 }
