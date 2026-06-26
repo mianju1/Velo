@@ -7,7 +7,7 @@ MPV_VERSION="${MPV_WINDOWS_VERSION:-v0.41.0}"
 MPV_TARGET="${MPV_WINDOWS_TARGET:-x86_64-w64-mingw32}"
 MPV_URL="${MPV_WINDOWS_URL:-https://github.com/mpv-player/mpv/releases/download/${MPV_VERSION}/mpv-${MPV_VERSION}-${MPV_TARGET}.zip}"
 
-if [[ -x "${RUNTIME_DIR}/mpv.exe" ]]; then
+if [[ -x "${RUNTIME_DIR}/mpv.exe" ]] && [[ -f "${RUNTIME_DIR}/mpv-2.dll" || -f "${RUNTIME_DIR}/libmpv-2.dll" || -f "${RUNTIME_DIR}/libmpv.dll" ]]; then
   echo "Windows mpv 运行时已存在：${RUNTIME_DIR}"
   exit 0
 fi
@@ -42,6 +42,11 @@ bsdtar -xf "${INNER_ZIP}" -C "${RUNTIME_DIR}"
 
 if [[ ! -f "${RUNTIME_DIR}/mpv.exe" ]]; then
   echo "mpv 压缩包格式不符合预期：未找到 mpv.exe" >&2
+  exit 1
+fi
+
+if [[ ! -f "${RUNTIME_DIR}/mpv-2.dll" && ! -f "${RUNTIME_DIR}/libmpv-2.dll" && ! -f "${RUNTIME_DIR}/libmpv.dll" ]]; then
+  echo "mpv 压缩包格式不符合预期：未找到 libmpv DLL" >&2
   exit 1
 fi
 

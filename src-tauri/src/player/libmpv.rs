@@ -30,9 +30,9 @@ use crate::{
     player::window_fit::mpv_autofit_larger_value,
 };
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use crate::player::backend::UnavailablePlayerBackend;
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 use crate::player::mpv::ExternalMpvBackend;
 
 type MpvHandle = c_void;
@@ -108,6 +108,8 @@ pub struct LibMpvBackend {
     symbols: LibMpvSymbols,
     handle: NonNull<MpvHandle>,
     renderer: Option<MpvOpenGlRenderer>,
+    initialized: bool,
+    video_surface_attached: bool,
     snapshot: PlaybackSnapshot,
 }
 
@@ -115,10 +117,12 @@ pub struct LibMpvBackend {
 unsafe impl Send for LibMpvBackend {}
 
 struct LibMpvSymbols {
+    mpv_initialize: MpvInitialize,
     mpv_destroy: MpvDestroy,
     mpv_command: MpvCommand,
     mpv_command_async: MpvCommandAsync,
     mpv_get_property: MpvGetProperty,
+    mpv_set_option_string: MpvSetOptionString,
     mpv_set_property: MpvSetProperty,
     mpv_render_context_create: MpvRenderContextCreate,
     mpv_render_context_update: MpvRenderContextUpdate,
@@ -200,7 +204,7 @@ impl LibMpvBackend {
             "yes",
         )?;
         set_option_string(mpv_set_option_string, handle, "osc", "no")?;
-        set_option_string(mpv_set_option_string, handle, "vo", "libmpv")?;
+        set_option_string(mpv_set_option_string, handle, "vo", default_video_output())?;
         configure_disk_cache(mpv_set_option_string, handle)?;
         // 百分比由 mpv 按当前显示器解析，避免高分辨率视频把初始窗口撑出屏幕。
         set_option_string(
@@ -210,19 +214,15 @@ impl LibMpvBackend {
             &mpv_autofit_larger_value(),
         )?;
 
-        let initialize_code = unsafe { mpv_initialize(handle.as_ptr()) };
-        if initialize_code < 0 {
-            unsafe { mpv_destroy(handle.as_ptr()) };
-            return Err(mpv_error("mpv_initialize", initialize_code));
-        }
-
         Ok(Self {
             _library: library,
             symbols: LibMpvSymbols {
+                mpv_initialize,
                 mpv_destroy,
                 mpv_command,
                 mpv_command_async,
                 mpv_get_property,
+                mpv_set_option_string,
                 mpv_set_property,
                 mpv_render_context_create,
                 mpv_render_context_update,
@@ -232,8 +232,23 @@ impl LibMpvBackend {
             },
             handle,
             renderer: None,
+            initialized: false,
+            video_surface_attached: false,
             snapshot: PlaybackSnapshot::default(),
         })
+    }
+
+    fn initialize(&mut self) -> AppResult<()> {
+        if self.initialized {
+            return Ok(());
+        }
+
+        let code = unsafe { (self.symbols.mpv_initialize)(self.handle.as_ptr()) };
+        if code < 0 {
+            return Err(mpv_error("mpv_initialize", code));
+        }
+        self.initialized = true;
+        Ok(())
     }
 
     fn command(&self, args: &[&str]) -> AppResult<()> {
@@ -323,12 +338,13 @@ impl LibMpvBackend {
 impl PlayerBackend for LibMpvBackend {
     fn attach_video_surface(&mut self, target: VideoSurfaceTarget) -> AppResult<()> {
         self.renderer = None;
-        self.renderer = Some(MpvOpenGlRenderer::new(self.handle, &self.symbols, target)?);
+        attach_native_video_surface(self, target)?;
+        self.video_surface_attached = true;
         Ok(())
     }
 
     fn load(&mut self, options: PlaybackLoadOptions) -> AppResult<()> {
-        if self.renderer.is_none() {
+        if !self.video_surface_attached {
             return Err(AppError::new(
                 "libmpv_render_surface_missing",
                 "未创建应用内视频渲染区域",
@@ -345,8 +361,18 @@ impl PlayerBackend for LibMpvBackend {
     }
 
     fn stop(&mut self) -> AppResult<()> {
+        if !self.initialized {
+            self.renderer = None;
+            self.video_surface_attached = false;
+            self.snapshot.loaded_url = None;
+            self.snapshot.position_seconds = 0.0;
+            self.snapshot.paused = false;
+            return Ok(());
+        }
+
         let result = self.command(&["stop"]);
         self.renderer = None;
+        self.video_surface_attached = false;
         self.snapshot.loaded_url = None;
         self.snapshot.position_seconds = 0.0;
         self.snapshot.paused = false;
@@ -456,7 +482,7 @@ impl PlayerBackend for LibMpvBackend {
             .flatten()
             .filter(|duration| duration.is_finite() && *duration > 0.0);
         crate::player::backend::PlaybackRuntimeStatus {
-            core_ready: self.renderer.is_some(),
+            core_ready: self.video_surface_attached,
             media_loaded: self.snapshot.loaded_url.is_some(),
             paused: self.snapshot.paused,
             paused_for_cache: self
@@ -474,8 +500,52 @@ impl PlayerBackend for LibMpvBackend {
 impl Drop for LibMpvBackend {
     fn drop(&mut self) {
         self.renderer = None;
+        self.video_surface_attached = false;
         unsafe { (self.symbols.mpv_destroy)(self.handle.as_ptr()) };
     }
+}
+
+#[cfg(target_os = "macos")]
+fn attach_native_video_surface(
+    backend: &mut LibMpvBackend,
+    target: VideoSurfaceTarget,
+) -> AppResult<()> {
+    backend.initialize()?;
+    backend.renderer = Some(MpvOpenGlRenderer::new(
+        backend.handle,
+        &backend.symbols,
+        target,
+    )?);
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn attach_native_video_surface(
+    backend: &mut LibMpvBackend,
+    target: VideoSurfaceTarget,
+) -> AppResult<()> {
+    if !backend.initialized {
+        set_option_string(
+            backend.symbols.mpv_set_option_string,
+            backend.handle,
+            "wid",
+            &target.ns_view.to_string(),
+        )?;
+    }
+    backend.initialize()
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn attach_native_video_surface(
+    _backend: &mut LibMpvBackend,
+    _target: VideoSurfaceTarget,
+) -> AppResult<()> {
+    Err(AppError::new(
+        "video_surface_not_available",
+        "当前平台暂不支持内置视频渲染区域",
+        None,
+        true,
+    ))
 }
 
 struct MpvOpenGlRenderer {
@@ -813,7 +883,7 @@ pub fn create_player_backend(mode: PlayerBackendMode) -> AppResult<Box<dyn Playe
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn create_default_playback_backend() -> AppResult<Box<dyn PlayerBackend>> {
     match LibMpvBackend::new() {
         Ok(backend) => Ok(Box::new(backend)),
@@ -824,7 +894,7 @@ fn create_default_playback_backend() -> AppResult<Box<dyn PlayerBackend>> {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn create_default_playback_backend() -> AppResult<Box<dyn PlayerBackend>> {
     Ok(Box::<ExternalMpvBackend>::default())
 }
@@ -847,12 +917,11 @@ pub fn libmpv_library_candidates_for_executable(executable: Option<&Path>) -> Ve
         }
     }
 
-    candidates.extend(homebrew_candidates());
-    candidates.push("libmpv.2.dylib".into());
-    candidates.push("libmpv.dylib".into());
+    candidates.extend(system_libmpv_candidates());
     candidates
 }
 
+#[cfg(target_os = "macos")]
 fn runtime_dirs_for_executable(executable: &Path) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
@@ -874,10 +943,46 @@ fn runtime_dirs_for_executable(executable: &Path) -> Vec<PathBuf> {
     dirs
 }
 
+#[cfg(target_os = "windows")]
+fn runtime_dirs_for_executable(executable: &Path) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    if let Some(executable_dir) = executable.parent() {
+        dirs.push(executable_dir.to_path_buf());
+        dirs.push(executable_dir.join("bin"));
+        dirs.push(executable_dir.join("resources").join("bin"));
+    }
+
+    if let Some(src_tauri_dir) = executable
+        .ancestors()
+        .find(|path| path.file_name().is_some_and(|name| name == "src-tauri"))
+    {
+        dirs.push(src_tauri_dir.join("runtime").join("windows").join("bin"));
+    }
+
+    dirs
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn runtime_dirs_for_executable(_executable: &Path) -> Vec<PathBuf> {
+    Vec::new()
+}
+
+#[cfg(target_os = "macos")]
 fn push_libmpv_candidates(candidates: &mut Vec<String>, dir: &Path) {
     candidates.push(dir.join("libmpv.2.dylib").to_string_lossy().into_owned());
     candidates.push(dir.join("libmpv.dylib").to_string_lossy().into_owned());
 }
+
+#[cfg(target_os = "windows")]
+fn push_libmpv_candidates(candidates: &mut Vec<String>, dir: &Path) {
+    candidates.push(dir.join("mpv-2.dll").to_string_lossy().into_owned());
+    candidates.push(dir.join("libmpv-2.dll").to_string_lossy().into_owned());
+    candidates.push(dir.join("libmpv.dll").to_string_lossy().into_owned());
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn push_libmpv_candidates(_candidates: &mut Vec<String>, _dir: &Path) {}
 
 pub fn mpv_error(operation: &str, code: c_int) -> AppError {
     AppError::new(
@@ -888,7 +993,8 @@ pub fn mpv_error(operation: &str, code: c_int) -> AppError {
     )
 }
 
-fn homebrew_candidates() -> Vec<String> {
+#[cfg(target_os = "macos")]
+fn system_libmpv_candidates() -> Vec<String> {
     [
         "/opt/homebrew/lib/libmpv.2.dylib",
         "/opt/homebrew/lib/libmpv.dylib",
@@ -900,12 +1006,51 @@ fn homebrew_candidates() -> Vec<String> {
     .collect()
 }
 
+#[cfg(target_os = "windows")]
+fn system_libmpv_candidates() -> Vec<String> {
+    vec![
+        "mpv-2.dll".into(),
+        "libmpv-2.dll".into(),
+        "libmpv.dll".into(),
+    ]
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn system_libmpv_candidates() -> Vec<String> {
+    Vec::new()
+}
+
+#[cfg(target_os = "macos")]
+fn default_video_output() -> &'static str {
+    "libmpv"
+}
+
+#[cfg(target_os = "windows")]
+fn default_video_output() -> &'static str {
+    "gpu-next,gpu,direct3d"
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn default_video_output() -> &'static str {
+    "libmpv"
+}
+
 fn hwdec_option(hwdec: &HardwareDecoder) -> &'static str {
     match hwdec {
-        HardwareDecoder::VideoToolbox => "videotoolbox",
+        HardwareDecoder::VideoToolbox => videotoolbox_hwdec_option(),
         HardwareDecoder::AutoSafe => "auto-safe",
         HardwareDecoder::Disabled => "no",
     }
+}
+
+#[cfg(target_os = "macos")]
+fn videotoolbox_hwdec_option() -> &'static str {
+    "videotoolbox"
+}
+
+#[cfg(not(target_os = "macos"))]
+fn videotoolbox_hwdec_option() -> &'static str {
+    "auto-safe"
 }
 
 fn configure_disk_cache(
@@ -1094,9 +1239,8 @@ mod tests {
             "/Applications/Velo.app/Contents/MacOS/Velo",
         )));
 
-        assert!(candidates.contains(
-            &"/Applications/Velo.app/Contents/Frameworks/libmpv.2.dylib".into(),
-        ));
+        assert!(candidates
+            .contains(&"/Applications/Velo.app/Contents/Frameworks/libmpv.2.dylib".into(),));
         assert!(!candidates
             .iter()
             .any(|path| path.contains(".app/Frameworks/libmpv")));
@@ -1108,9 +1252,45 @@ mod tests {
             "/workspace/velo/src-tauri/target/debug/velo",
         )));
 
-        assert!(candidates.contains(
-            &"/workspace/velo/src-tauri/runtime/macos/lib/libmpv.2.dylib".into(),
-        ));
+        assert!(candidates
+            .contains(&"/workspace/velo/src-tauri/runtime/macos/lib/libmpv.2.dylib".into(),));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_default_backend_uses_embedded_surface_even_without_runtime() {
+        let backend = create_player_backend(PlayerBackendMode::LibMpv).unwrap();
+
+        assert!(backend.requires_video_surface());
+    }
+
+    #[test]
+    fn libmpv_library_candidates_include_windows_packaged_runtime() {
+        let candidates = libmpv_library_candidates_for_executable(Some(&PathBuf::from(
+            "C:/Program Files/Velo/Velo.exe",
+        )));
+        let mpv_dll = PathBuf::from("C:/Program Files/Velo/resources/bin/mpv-2.dll")
+            .to_string_lossy()
+            .into_owned();
+        let libmpv_dll = PathBuf::from("C:/Program Files/Velo/resources/bin/libmpv-2.dll")
+            .to_string_lossy()
+            .into_owned();
+
+        assert!(candidates.contains(&mpv_dll));
+        assert!(candidates.contains(&libmpv_dll));
+    }
+
+    #[test]
+    fn libmpv_library_candidates_include_windows_repo_runtime_for_dev() {
+        let candidates = libmpv_library_candidates_for_executable(Some(&PathBuf::from(
+            "C:/workspace/velo/src-tauri/target/debug/velo.exe",
+        )));
+        let runtime_dll =
+            PathBuf::from("C:/workspace/velo/src-tauri/runtime/windows/bin/mpv-2.dll")
+                .to_string_lossy()
+                .into_owned();
+
+        assert!(candidates.contains(&runtime_dll));
     }
 
     #[test]
@@ -1185,6 +1365,15 @@ mod tests {
 
         assert_eq!(startup, 15);
         assert_eq!(steady, 30);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn videotoolbox_hwdec_uses_safe_windows_fallback() {
+        assert_eq!(
+            super::hwdec_option(&crate::player::backend::HardwareDecoder::VideoToolbox),
+            "auto-safe"
+        );
     }
 
     #[test]
