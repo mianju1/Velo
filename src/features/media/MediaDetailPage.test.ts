@@ -49,6 +49,81 @@ describe("MediaDetailPage", () => {
     vi.clearAllMocks();
   });
 
+  it("20 集及以上详情页展示滑动选集", async () => {
+    const { root, pinia } = await mountDetailPage();
+    const media = useMediaStore(pinia);
+    media.detail.item = {
+      id: "season-1",
+      name: "追番 第 1 季",
+      type: "Season",
+      seriesId: "series-1",
+      seasonId: "season-1",
+    };
+    media.detail.episodes = buildEpisodes(20);
+    media.detail.loading = false;
+    media.detail.error = null;
+    await nextTick();
+
+    const slider = root.querySelector<HTMLInputElement>(".detail-episode-slider input[type='range']");
+    expect(slider).not.toBeNull();
+    expect(slider?.min).toBe("1");
+    expect(slider?.max).toBe("20");
+    expect(slider?.value).toBe("1");
+  });
+
+  it("少于 20 集详情页不展示滑动选集", async () => {
+    const { root, pinia } = await mountDetailPage();
+    const media = useMediaStore(pinia);
+    media.detail.item = {
+      id: "season-1",
+      name: "追番 第 1 季",
+      type: "Season",
+      seriesId: "series-1",
+      seasonId: "season-1",
+    };
+    media.detail.episodes = buildEpisodes(19);
+    media.detail.loading = false;
+    media.detail.error = null;
+    await nextTick();
+
+    expect(root.querySelector(".detail-episode-section")).not.toBeNull();
+    expect(root.querySelector(".detail-episode-slider")).toBeNull();
+  });
+
+  it("滑动选集能快捷选择对应集数", async () => {
+    vi.mocked(startPlayback).mockResolvedValue({
+      itemId: "episode-12",
+      mediaSourceId: "source-12",
+      playMethod: "direct",
+    });
+    const { root, pinia } = await mountDetailPage();
+    const media = useMediaStore(pinia);
+    media.detail.item = {
+      id: "season-1",
+      name: "追番 第 1 季",
+      type: "Season",
+      seriesId: "series-1",
+      seasonId: "season-1",
+    };
+    media.detail.episodes = buildEpisodes(20);
+    media.detail.loading = false;
+    media.detail.error = null;
+    await nextTick();
+
+    const slider = root.querySelector<HTMLInputElement>(".detail-episode-slider input[type='range']");
+    expect(slider).not.toBeNull();
+    slider!.value = "12";
+    slider!.dispatchEvent(new Event("change"));
+    await nextTick();
+
+    expect(startPlayback).toHaveBeenCalledWith({
+      serverId: "server-1",
+      userId: "user-1",
+      itemId: "episode-12",
+      mediaSourceId: undefined,
+    });
+  });
+
   it("多集详情页展示单集历史进度并点击续播对应集数", async () => {
     vi.mocked(startPlayback).mockResolvedValue({
       itemId: "episode-3",
@@ -439,6 +514,19 @@ async function mountDetailPage() {
   await nextTick();
 
   return { root, pinia };
+}
+
+function buildEpisodes(count: number) {
+  return Array.from({ length: count }, (_, index) => {
+    const episodeNumber = index + 1;
+    return {
+      id: `episode-${episodeNumber}`,
+      name: `第 ${episodeNumber} 集`,
+      type: "Episode" as const,
+      episodeNumber,
+      runtimeMinutes: 30,
+    };
+  });
 }
 
 async function flush() {

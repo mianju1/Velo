@@ -21,6 +21,7 @@ const playback = usePlaybackStore();
 const session = useSessionStore();
 const itemId = computed(() => String(route.params.itemId ?? ""));
 const favoriteLoading = ref(false);
+const episodeSliderValue = ref(1);
 
 const imageUrl = computed(() => {
   const item = media.detail.item;
@@ -142,6 +143,8 @@ const playbackEpisodes = computed<PlaybackEpisode[]>(() =>
     subtitles: episode.subtitleTracks ?? [],
   })),
 );
+const showEpisodeSlider = computed(() => media.detail.episodes.length >= 20);
+const selectedSliderEpisode = computed(() => media.detail.episodes[episodeSliderValue.value - 1]);
 
 function load() {
   if (itemId.value) {
@@ -183,6 +186,18 @@ function playEpisode(episode: MediaItem) {
   });
 }
 
+function updateEpisodeSlider(event: Event) {
+  episodeSliderValue.value = episodeSliderInputValue(event);
+}
+
+function playEpisodeFromSlider(event: Event) {
+  updateEpisodeSlider(event);
+  const episode = selectedSliderEpisode.value;
+  if (episode) {
+    playEpisode(episode);
+  }
+}
+
 function goBack() {
   if (window.history.length > 1) {
     router.back();
@@ -207,6 +222,12 @@ async function toggleFavoriteCurrentItem() {
 
 onMounted(load);
 watch(itemId, load);
+watch(
+  () => media.detail.episodes.length,
+  (episodeCount) => {
+    episodeSliderValue.value = clampEpisodeSliderValue(episodeSliderValue.value, episodeCount);
+  },
+);
 
 function formatDate(value: string) {
   const date = new Date(value);
@@ -277,6 +298,20 @@ function playbackPositionSeconds(item: MediaItem) {
 
   const seconds = Math.floor(item.playbackPositionTicks / 10_000_000);
   return seconds > 0 ? seconds : undefined;
+}
+
+function episodeSliderInputValue(event: Event) {
+  const value = Number((event.target as HTMLInputElement | null)?.value);
+  return clampEpisodeSliderValue(value, media.detail.episodes.length);
+}
+
+function clampEpisodeSliderValue(value: number, episodeCount: number) {
+  if (!episodeCount) {
+    return 1;
+  }
+
+  const numericValue = Number.isFinite(value) ? Math.round(value) : 1;
+  return Math.min(Math.max(numericValue, 1), episodeCount);
 }
 
 function resumeLabel(item: MediaItem) {
@@ -363,6 +398,26 @@ function isKnownVideoSize(sizeBytes: number | undefined) {
         <p v-if="playback.error" class="error playback-error">{{ playback.error.message }}</p>
         <section v-if="media.detail.episodes.length > 1" class="detail-episode-section" aria-label="选集">
           <h2>选集</h2>
+          <div v-if="showEpisodeSlider" class="detail-episode-slider">
+            <label>
+              <span>快速选集</span>
+              <strong>第 {{ episodeSliderValue }} / {{ media.detail.episodes.length }} 集</strong>
+              <input
+                type="range"
+                min="1"
+                :max="media.detail.episodes.length"
+                step="1"
+                :value="episodeSliderValue"
+                :disabled="playback.loading"
+                aria-label="滑动选集"
+                @input="updateEpisodeSlider"
+                @change="playEpisodeFromSlider"
+              />
+            </label>
+            <span v-if="selectedSliderEpisode" class="detail-episode-slider-title">
+              {{ episodeTitle(selectedSliderEpisode) }}
+            </span>
+          </div>
           <div class="detail-episode-grid">
             <button
               v-for="episode in media.detail.episodes"

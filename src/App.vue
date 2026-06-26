@@ -1527,6 +1527,50 @@ h2 {
   font-size: 18px;
 }
 
+.detail-episode-slider {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--surface-raised);
+}
+
+.detail-episode-slider label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.detail-episode-slider label > span {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.detail-episode-slider strong {
+  justify-self: end;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.detail-episode-slider input[type="range"] {
+  grid-column: 1 / -1;
+  min-height: 28px;
+  padding: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.detail-episode-slider-title {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .detail-episode-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
