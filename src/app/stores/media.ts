@@ -50,6 +50,8 @@ type LoadableViews = {
 };
 
 export const useMediaStore = defineStore("media", () => {
+  let loadedViewsSessionKey: string | null = null;
+  let loadingViewsSessionKey: string | null = null;
   const views = reactive<LoadableViews>({
     items: [],
     loading: false,
@@ -149,18 +151,28 @@ export const useMediaStore = defineStore("media", () => {
     if (!context) {
       views.items = [];
       views.error = sessionRequiredError();
+      loadedViewsSessionKey = null;
+      loadingViewsSessionKey = null;
+      return;
+    }
+    const sessionKey = viewSessionKey(context);
+    if (loadedViewsSessionKey === sessionKey || (views.loading && loadingViewsSessionKey === sessionKey)) {
       return;
     }
 
     views.loading = true;
+    loadingViewsSessionKey = sessionKey;
     views.error = null;
     try {
       views.items = await fetchLibraryViews(context);
+      loadedViewsSessionKey = sessionKey;
     } catch (caught) {
       views.items = [];
       views.error = toAppError(caught);
+      loadedViewsSessionKey = null;
     } finally {
       views.loading = false;
+      loadingViewsSessionKey = null;
     }
   }
 
@@ -351,6 +363,10 @@ function requireSession() {
     userId: session.account.id,
     token: session.accessToken,
   };
+}
+
+function viewSessionKey(context: { serverUrl: string; userId: string; token: string }) {
+  return `${context.serverUrl}|${context.userId}|${context.token}`;
 }
 
 async function loadEpisodesForItem(
