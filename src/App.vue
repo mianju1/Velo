@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, watch } from "vue";
+import { useFontStore } from "./app/stores/font";
 import { usePlaybackStore } from "./app/stores/playback";
 import { useThemeStore } from "./app/stores/theme";
 import PlaybackControls from "./features/playback/PlaybackControls.vue";
 
 const playback = usePlaybackStore();
+const font = useFontStore();
 const theme = useThemeStore();
 const appClasses = computed(() => ({
   "app-shell--playback": playback.playbackVisible,
@@ -19,6 +21,12 @@ watch(
 );
 
 watch(
+  () => font.selectedFamily,
+  () => font.applyToDocument(),
+  { immediate: true },
+);
+
+watch(
   () => playback.playbackVisible,
   (visible) => {
     document.body.classList.toggle("body--playback", visible);
@@ -28,6 +36,7 @@ watch(
 
 onMounted(() => {
   stopSystemThemeSync = theme.startSystemThemeSync();
+  void font.loadSystemFonts();
 });
 
 onUnmounted(() => {
@@ -46,6 +55,38 @@ onUnmounted(() => {
 </template>
 
 <style>
+@font-face {
+  font-family: "MapleMono-CN";
+  src: url("./assets/fonts/MapleMono-CN-Regular.ttf") format("truetype");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "MapleMono-CN";
+  src: url("./assets/fonts/MapleMono-CN-Bold.ttf") format("truetype");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 700;
+}
+
+@font-face {
+  font-family: "MapleMono-CN";
+  src: url("./assets/fonts/MapleMono-CN-Italic.ttf") format("truetype");
+  font-display: swap;
+  font-style: italic;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "MapleMono-CN";
+  src: url("./assets/fonts/MapleMono-CN-BoldItalic.ttf") format("truetype");
+  font-display: swap;
+  font-style: italic;
+  font-weight: 700;
+}
+
 :root {
   color: var(--text-primary);
   background: transparent;
@@ -68,8 +109,10 @@ onUnmounted(() => {
   --shadow: 0 18px 52px rgba(20, 31, 45, 0.1);
   --scrollbar-track: color-mix(in srgb, var(--surface-panel) 76%, transparent);
   --scrollbar-thumb: rgba(120, 132, 146, 0.36);
+  --app-font-family: "MapleMono-CN";
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    var(--app-font-family), Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -968,6 +1011,22 @@ h2 {
 
 .settings-theme-card > span {
   grid-column: 1;
+}
+
+.settings-font-card label {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-font-card select {
+  min-height: 40px;
+}
+
+.settings-font-error {
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .theme-switch {

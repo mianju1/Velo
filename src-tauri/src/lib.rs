@@ -7,6 +7,7 @@ pub mod player;
 pub mod storage;
 
 use commands::{
+    fonts::list_system_fonts,
     playback::{
         clear_playback_cache_command, get_playback_cache_status, mpv_disable_subtitle,
         mpv_get_status, mpv_load_subtitle, mpv_pause, mpv_resume, mpv_seek,
@@ -88,7 +89,8 @@ pub fn run() {
             mpv_set_buffer_profile,
             report_playback_progress,
             get_playback_cache_status,
-            clear_playback_cache_command
+            clear_playback_cache_command,
+            list_system_fonts
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
