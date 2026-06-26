@@ -179,6 +179,107 @@ describe("MediaDetailPage", () => {
     expect(playback.positionSeconds).toBe(754);
   });
 
+  it("多集详情页默认每页展示 20 集并显示分页状态", async () => {
+    const { root, pinia } = await mountDetailPage();
+    const media = useMediaStore(pinia);
+    media.detail.item = {
+      id: "season-1",
+      name: "Season 1",
+      type: "Season",
+      seriesId: "series-1",
+      seasonId: "season-1",
+    };
+    media.detail.episodes = buildEpisodes(41);
+    media.detail.loading = false;
+    media.detail.error = null;
+    await nextTick();
+
+    const episodeButtons = root.querySelectorAll<HTMLButtonElement>(".detail-episode-card");
+    expect(episodeButtons).toHaveLength(20);
+    expect(episodeButtons[0]?.textContent).toContain("Episode 1");
+    expect(episodeButtons[19]?.textContent).toContain("Episode 20");
+    expect(root.textContent).not.toContain("Episode 21");
+    expect(root.querySelector(".detail-episode-page-summary")?.textContent).toContain("1 / 3");
+  });
+
+  it("多集详情页可以手动输入页码跳转到对应分页", async () => {
+    vi.mocked(startPlayback).mockResolvedValue({
+      itemId: "episode-21",
+      mediaSourceId: "source-21",
+      playMethod: "direct",
+    });
+    const { root, pinia } = await mountDetailPage();
+    const media = useMediaStore(pinia);
+    media.detail.item = {
+      id: "season-1",
+      name: "Season 1",
+      type: "Season",
+      seriesId: "series-1",
+      seasonId: "season-1",
+    };
+    media.detail.episodes = buildEpisodes(41);
+    media.detail.loading = false;
+    media.detail.error = null;
+    await nextTick();
+
+    const pageInput = root.querySelector<HTMLInputElement>(".detail-episode-page-input");
+    expect(pageInput).not.toBeNull();
+
+    pageInput!.value = "2";
+    pageInput!.dispatchEvent(new Event("input"));
+    await nextTick();
+
+    const episodeButtons = root.querySelectorAll<HTMLButtonElement>(".detail-episode-card");
+    expect(episodeButtons).toHaveLength(20);
+    expect(episodeButtons[0]?.textContent).toContain("Episode 21");
+    expect(episodeButtons[19]?.textContent).toContain("Episode 40");
+    expect(root.querySelector(".detail-episode-page-summary")?.textContent).toContain("2 / 3");
+
+    episodeButtons[0]?.click();
+    await flush();
+
+    const playback = usePlaybackStore(pinia);
+    expect(playback.current?.itemId).toBe("episode-21");
+    expect(playback.episodes).toHaveLength(41);
+    expect(playback.episodes[0]?.itemId).toBe("episode-1");
+    expect(playback.episodes[40]?.itemId).toBe("episode-41");
+  });
+
+  it("页码输入框只保留 1 到最大页码之间的数字", async () => {
+    const { root, pinia } = await mountDetailPage();
+    const media = useMediaStore(pinia);
+    media.detail.item = {
+      id: "season-1",
+      name: "Season 1",
+      type: "Season",
+      seriesId: "series-1",
+      seasonId: "season-1",
+    };
+    media.detail.episodes = buildEpisodes(41);
+    media.detail.loading = false;
+    media.detail.error = null;
+    await nextTick();
+
+    const pageInput = root.querySelector<HTMLInputElement>(".detail-episode-page-input");
+    expect(pageInput).not.toBeNull();
+
+    pageInput!.value = "abc";
+    pageInput!.dispatchEvent(new Event("input"));
+    await nextTick();
+    expect(pageInput!.value).toBe("1");
+
+    pageInput!.value = "0";
+    pageInput!.dispatchEvent(new Event("input"));
+    await nextTick();
+    expect(pageInput!.value).toBe("1");
+
+    pageInput!.value = "99";
+    pageInput!.dispatchEvent(new Event("input"));
+    await nextTick();
+    expect(pageInput!.value).toBe("3");
+    expect(root.querySelector(".detail-episode-page-summary")?.textContent).toContain("3 / 3");
+  });
+
   it("单集视频详情页不展示选集区域，播放按钮仍启动当前条目", async () => {
     vi.mocked(startPlayback).mockResolvedValue({
       itemId: "movie-1",
@@ -199,6 +300,7 @@ describe("MediaDetailPage", () => {
     await nextTick();
 
     expect(root.querySelector(".detail-episode-section")).toBeNull();
+    expect(root.querySelector(".detail-episode-pagination")).toBeNull();
 
     root.querySelector<HTMLButtonElement>(".action-row button")?.click();
     await nextTick();
@@ -521,7 +623,7 @@ function buildEpisodes(count: number) {
     const episodeNumber = index + 1;
     return {
       id: `episode-${episodeNumber}`,
-      name: `第 ${episodeNumber} 集`,
+      name: `Episode ${episodeNumber}`,
       type: "Episode" as const,
       episodeNumber,
       runtimeMinutes: 30,
