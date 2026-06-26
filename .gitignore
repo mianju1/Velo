@@ -1,0 +1,41 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Local environment and distribution credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p8
+*.p12
+*.cer
+*.cert
+*.mobileprovision
+*.provisionprofile
+*.xcarchive
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Downloaded by scripts/prepare-windows-mpv-runtime.sh for Windows packages.
+src-tauri/runtime/windows/bin/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

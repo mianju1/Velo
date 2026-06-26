@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="playGradient" x1="360" y1="200" x2="760" y2="780" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5D4CFF"/>
+      <stop offset="0.48" stop-color="#3E55F6"/>
+      <stop offset="1" stop-color="#211477"/>
+    </linearGradient>
+
+    <linearGradient id="filmGradient" x1="300" y1="240" x2="430" y2="760" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3420A0"/>
+      <stop offset="0.55" stop-color="#25156F"/>
+      <stop offset="1" stop-color="#171044"/>
+    </linearGradient>
+
+    <linearGradient id="foldGradient" x1="420" y1="210" x2="520" y2="390" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1A125E" stop-opacity="0.48"/>
+      <stop offset="1" stop-color="#1A125E" stop-opacity="0"/>
+    </linearGradient>
+
+    <filter id="appShadow" x="56" y="56" width="912" height="912" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="24" stdDeviation="30" flood-color="#10133A" flood-opacity="0.18"/>
+    </filter>
+
+    <filter id="iconShadow" x="220" y="160" width="640" height="720" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#14114F" flood-opacity="0.30"/>
+    </filter>
+  </defs>
+
+  <!-- white rounded-square app icon background -->
+  <rect x="96" y="96" width="832" height="832" rx="192" fill="#FFFFFF" filter="url(#appShadow)"/>
+
+  <g filter="url(#iconShadow)">
+    <!-- left film strip: simple rounded vertical capsule -->
+    <rect x="300" y="235" width="138" height="554" rx="69" fill="url(#filmGradient)"/>
+
+    <!-- film holes -->
+    <rect x="337" y="296" width="44" height="44" rx="12" fill="#FFFFFF" opacity="0.96"/>
+    <rect x="337" y="412" width="44" height="44" rx="12" fill="#FFFFFF" opacity="0.96"/>
+    <rect x="337" y="528" width="44" height="44" rx="12" fill="#FFFFFF" opacity="0.96"/>
+    <rect x="337" y="644" width="44" height="44" rx="12" fill="#FFFFFF" opacity="0.96"/>
+
+    <!-- rounded triangular play ribbon -->
+    <path d="M423 230
+             C454 211 493 211 525 231
+             L729 360
+             C825 421 825 603 729 664
+             L525 793
+             C493 813 454 813 423 794
+             C389 773 385 727 417 702
+             L616 547
+             C641 528 641 496 616 477
+             L417 322
+             C385 297 389 251 423 230Z"
+          fill="url(#playGradient)"/>
+
+    <!-- top fold shade -->
+    <path d="M423 230
+             C454 211 493 211 525 231
+             L563 255
+             C500 250 453 274 421 322
+             C385 297 389 251 423 230Z"
+          fill="url(#foldGradient)"/>
+
+    <!-- bottom fold shade -->
+    <path d="M417 702
+             C385 727 389 773 423 794
+             C454 813 493 813 525 793
+             L563 769
+             C500 774 453 750 421 702Z"
+          fill="#130F4B" opacity="0.18"/>
+
+    <!-- inner white play triangle -->
+    <path d="M465 378
+             C465 350 496 334 519 350
+             L681 466
+             C712 488 712 536 681 558
+             L519 674
+             C496 690 465 674 465 646
+             V378Z"
+          fill="#FFFFFF"/>
+  </g>
+</svg>

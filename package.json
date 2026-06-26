@@ -1,0 +1,44 @@
+{
+  "name": "velo",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest",
+    "prepare:libmpv": "./scripts/prepare-libmpv-runtime.sh",
+    "prepare:libmpv:sonoma": "./scripts/prepare-macos-sonoma-libmpv-runtime.sh",
+    "prepare:windows-mpv": "./scripts/prepare-windows-mpv-runtime.sh",
+    "sign:macos": "./scripts/sign-macos-app.sh",
+    "verify:macos-runtime": "./scripts/verify-macos-libmpv-runtime.sh",
+    "dmg:macos": "./scripts/create-macos-dmg.sh",
+    "notarize:macos": "./scripts/notarize-macos-dmg.sh",
+    "tauri:build:macos": "tauri build --bundles app",
+    "tauri:build:windows": "CARGO_HTTP_MULTIPLEXING=false tauri build --target x86_64-pc-windows-gnu --bundles nsis",
+    "package:macos:unsigned": "npm run prepare:libmpv:sonoma && npm run tauri:build:macos && npm run verify:macos-runtime && npm run dmg:macos",
+    "package:macos:local": "npm run prepare:libmpv:sonoma && npm run tauri:build:macos && npm run verify:macos-runtime && npm run sign:macos && npm run dmg:macos",
+    "package:macos:release": "npm run prepare:libmpv:sonoma && npm run tauri:build:macos && npm run verify:macos-runtime && npm run sign:macos && npm run dmg:macos && MACOS_NOTARIZE_REQUIRED=1 MACOS_NOTARIZE=1 npm run notarize:macos",
+    "package:macos": "npm run package:macos:release",
+    "package:windows": "npm run prepare:windows-mpv && npm run tauri:build:windows",
+    "package:all": "npm run package:macos:release && npm run package:windows",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.13",
+    "vue-router": "^5.0.7"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "jsdom": "^29.1.1",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3",
+    "vitest": "^4.1.7",
+    "vue-tsc": "^2.1.10"
+  }
+}
