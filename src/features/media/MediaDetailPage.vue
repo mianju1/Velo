@@ -21,6 +21,9 @@ const playback = usePlaybackStore();
 const session = useSessionStore();
 const itemId = computed(() => String(route.params.itemId ?? ""));
 const favoriteLoading = ref(false);
+const currentEpisodePage = ref(1);
+const episodePageInput = ref("1");
+const EPISODES_PER_PAGE = 20;
 
 const imageUrl = computed(() => {
   const item = media.detail.item;
@@ -142,6 +145,12 @@ const playbackEpisodes = computed<PlaybackEpisode[]>(() =>
     subtitles: episode.subtitleTracks ?? [],
   })),
 );
+const maxEpisodePage = computed(() => Math.max(1, Math.ceil(media.detail.episodes.length / EPISODES_PER_PAGE)));
+const hasEpisodePagination = computed(() => media.detail.episodes.length > EPISODES_PER_PAGE);
+const pagedEpisodes = computed(() => {
+  const start = (currentEpisodePage.value - 1) * EPISODES_PER_PAGE;
+  return media.detail.episodes.slice(start, start + EPISODES_PER_PAGE);
+});
 
 function load() {
   if (itemId.value) {
@@ -206,7 +215,34 @@ async function toggleFavoriteCurrentItem() {
 }
 
 onMounted(load);
-watch(itemId, load);
+watch(itemId, () => {
+  setEpisodePage(1);
+  load();
+});
+watch(
+  () => media.detail.episodes.length,
+  () => setEpisodePage(currentEpisodePage.value),
+);
+
+function setEpisodePage(page: number) {
+  const normalizedPage = Number.isFinite(page) ? Math.floor(page) : 1;
+  const nextPage = Math.min(Math.max(normalizedPage, 1), maxEpisodePage.value);
+  currentEpisodePage.value = nextPage;
+  episodePageInput.value = String(nextPage);
+}
+
+function handleEpisodePageInput(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const digits = input.value.replace(/\D/g, "");
+  setEpisodePage(digits ? Number(digits) : currentEpisodePage.value);
+  input.value = episodePageInput.value;
+}
+
+function preventInvalidEpisodePageInput(event: InputEvent) {
+  if (event.data && /\D/.test(event.data)) {
+    event.preventDefault();
+  }
+}
 
 function formatDate(value: string) {
   const date = new Date(value);
@@ -362,10 +398,51 @@ function isKnownVideoSize(sizeBytes: number | undefined) {
         </div>
         <p v-if="playback.error" class="error playback-error">{{ playback.error.message }}</p>
         <section v-if="media.detail.episodes.length > 1" class="detail-episode-section" aria-label="选集">
-          <h2>选集</h2>
+          <div class="detail-episode-heading">
+            <h2>选集</h2>
+            <div v-if="hasEpisodePagination" class="detail-episode-pagination" aria-label="剧集分页">
+              <button
+                type="button"
+                class="ghost detail-episode-page-button"
+                :disabled="currentEpisodePage <= 1"
+                aria-label="上一页"
+                @click="setEpisodePage(currentEpisodePage - 1)"
+              >
+                <svg data-icon="page-prev" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M15 6 9 12l6 6"></path>
+                </svg>
+              </button>
+              <label class="detail-episode-page-jump">
+                <span>第</span>
+                <input
+                  class="detail-episode-page-input"
+                  type="text"
+                  inputmode="numeric"
+                  pattern="[0-9]*"
+                  :value="episodePageInput"
+                  :aria-label="`跳转页码，范围 1 到 ${maxEpisodePage}`"
+                  @beforeinput="preventInvalidEpisodePageInput"
+                  @input="handleEpisodePageInput"
+                />
+                <span>页</span>
+              </label>
+              <span class="detail-episode-page-summary">{{ currentEpisodePage }} / {{ maxEpisodePage }}</span>
+              <button
+                type="button"
+                class="ghost detail-episode-page-button"
+                :disabled="currentEpisodePage >= maxEpisodePage"
+                aria-label="下一页"
+                @click="setEpisodePage(currentEpisodePage + 1)"
+              >
+                <svg data-icon="page-next" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m9 6 6 6-6 6"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
           <div class="detail-episode-grid">
             <button
-              v-for="episode in media.detail.episodes"
+              v-for="episode in pagedEpisodes"
               :key="episode.id"
               type="button"
               class="detail-episode-card"

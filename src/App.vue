@@ -1527,6 +1527,74 @@ h2 {
   font-size: 18px;
 }
 
+.detail-episode-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.detail-episode-heading h2 {
+  margin-bottom: 0;
+}
+
+.detail-episode-pagination {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.detail-episode-page-button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
+.detail-episode-page-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.detail-episode-page-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.detail-episode-page-input {
+  width: 48px;
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 8px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--panel) 86%, transparent);
+  text-align: center;
+  font: inherit;
+}
+
+.detail-episode-page-input:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.detail-episode-page-summary {
+  min-width: 40px;
+  text-align: center;
+}
+
 .detail-episode-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
