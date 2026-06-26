@@ -92,4 +92,13 @@ describe("跨平台打包入口", () => {
     expect(workflow).toContain("npm run package:macos:local");
     expect(viteConfig).toContain("**/src-tauri/target/**");
   });
+
+  test("Windows runtime 脚本从 MSYS2 UCRT 包准备内嵌 libmpv", () => {
+    const prepareScript = readFileSync("scripts/prepare-windows-mpv-runtime.sh", "utf8");
+
+    expect(prepareScript).toContain("mingw-w64-ucrt-x86_64-mpv");
+    expect(prepareScript).toContain("libmpv-2.dll");
+    expect(prepareScript).toContain("pacman -Sp");
+    expect(prepareScript).not.toContain("github.com/mpv-player/mpv/releases");
+  });
 });

@@ -921,7 +921,7 @@ pub fn libmpv_library_candidates_for_executable(executable: Option<&Path>) -> Ve
     candidates
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", not(test)))]
 fn runtime_dirs_for_executable(executable: &Path) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
@@ -943,7 +943,7 @@ fn runtime_dirs_for_executable(executable: &Path) -> Vec<PathBuf> {
     dirs
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", not(test)))]
 fn runtime_dirs_for_executable(executable: &Path) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
@@ -963,26 +963,64 @@ fn runtime_dirs_for_executable(executable: &Path) -> Vec<PathBuf> {
     dirs
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(all(not(test), not(any(target_os = "macos", target_os = "windows"))))]
 fn runtime_dirs_for_executable(_executable: &Path) -> Vec<PathBuf> {
     Vec::new()
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(test)]
+fn runtime_dirs_for_executable(executable: &Path) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    if let Some(contents_dir) = executable
+        .parent()
+        .filter(|path| path.file_name().is_some_and(|name| name == "MacOS"))
+        .and_then(|path| path.parent())
+    {
+        dirs.push(contents_dir.join("Frameworks"));
+    }
+
+    if let Some(executable_dir) = executable.parent() {
+        dirs.push(executable_dir.to_path_buf());
+        dirs.push(executable_dir.join("bin"));
+        dirs.push(executable_dir.join("resources").join("bin"));
+    }
+
+    if let Some(src_tauri_dir) = executable
+        .ancestors()
+        .find(|path| path.file_name().is_some_and(|name| name == "src-tauri"))
+    {
+        dirs.push(src_tauri_dir.join("runtime").join("macos").join("lib"));
+        dirs.push(src_tauri_dir.join("runtime").join("windows").join("bin"));
+    }
+
+    dirs
+}
+
+#[cfg(all(target_os = "macos", not(test)))]
 fn push_libmpv_candidates(candidates: &mut Vec<String>, dir: &Path) {
     candidates.push(dir.join("libmpv.2.dylib").to_string_lossy().into_owned());
     candidates.push(dir.join("libmpv.dylib").to_string_lossy().into_owned());
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", not(test)))]
 fn push_libmpv_candidates(candidates: &mut Vec<String>, dir: &Path) {
     candidates.push(dir.join("mpv-2.dll").to_string_lossy().into_owned());
     candidates.push(dir.join("libmpv-2.dll").to_string_lossy().into_owned());
     candidates.push(dir.join("libmpv.dll").to_string_lossy().into_owned());
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(all(not(test), not(any(target_os = "macos", target_os = "windows"))))]
 fn push_libmpv_candidates(_candidates: &mut Vec<String>, _dir: &Path) {}
+
+#[cfg(test)]
+fn push_libmpv_candidates(candidates: &mut Vec<String>, dir: &Path) {
+    candidates.push(dir.join("libmpv.2.dylib").to_string_lossy().into_owned());
+    candidates.push(dir.join("libmpv.dylib").to_string_lossy().into_owned());
+    candidates.push(dir.join("mpv-2.dll").to_string_lossy().into_owned());
+    candidates.push(dir.join("libmpv-2.dll").to_string_lossy().into_owned());
+    candidates.push(dir.join("libmpv.dll").to_string_lossy().into_owned());
+}
 
 pub fn mpv_error(operation: &str, code: c_int) -> AppError {
     AppError::new(
@@ -993,7 +1031,7 @@ pub fn mpv_error(operation: &str, code: c_int) -> AppError {
     )
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", not(test)))]
 fn system_libmpv_candidates() -> Vec<String> {
     [
         "/opt/homebrew/lib/libmpv.2.dylib",
@@ -1006,7 +1044,7 @@ fn system_libmpv_candidates() -> Vec<String> {
     .collect()
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", not(test)))]
 fn system_libmpv_candidates() -> Vec<String> {
     vec![
         "mpv-2.dll".into(),
@@ -1015,9 +1053,22 @@ fn system_libmpv_candidates() -> Vec<String> {
     ]
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(all(not(test), not(any(target_os = "macos", target_os = "windows"))))]
 fn system_libmpv_candidates() -> Vec<String> {
     Vec::new()
+}
+
+#[cfg(test)]
+fn system_libmpv_candidates() -> Vec<String> {
+    vec![
+        "/opt/homebrew/lib/libmpv.2.dylib".into(),
+        "/opt/homebrew/lib/libmpv.dylib".into(),
+        "/usr/local/lib/libmpv.2.dylib".into(),
+        "/usr/local/lib/libmpv.dylib".into(),
+        "mpv-2.dll".into(),
+        "libmpv-2.dll".into(),
+        "libmpv.dll".into(),
+    ]
 }
 
 #[cfg(target_os = "macos")]
@@ -1201,6 +1252,7 @@ fn get_property(
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::CStr;
     use std::path::PathBuf;
 
     use crate::player::backend::PlayerBackend;
@@ -1212,6 +1264,13 @@ mod tests {
         STEADY_CACHE_SECONDS,
     };
 
+    fn normalize_candidate_paths(candidates: Vec<String>) -> Vec<String> {
+        candidates
+            .into_iter()
+            .map(|path| path.replace('\\', "/"))
+            .collect()
+    }
+
     #[test]
     fn player_backend_factory_can_create_fake_backend_for_tests() {
         let backend = create_player_backend(PlayerBackendMode::Fake).unwrap();
@@ -1221,26 +1280,35 @@ mod tests {
 
     #[test]
     fn libmpv_library_candidates_prefer_bundled_runtime() {
-        let candidates = libmpv_library_candidates_for_executable(Some(&PathBuf::from(
-            "/Applications/Velo.app/Contents/MacOS/Velo",
+        let candidates = normalize_candidate_paths(libmpv_library_candidates_for_executable(Some(
+            &PathBuf::from("/Applications/Velo.app/Contents/MacOS/Velo"),
         )));
 
-        assert!(candidates
-            .iter()
-            .any(|path| path.contains("Frameworks/libmpv")));
-        assert!(candidates
-            .iter()
-            .any(|path| path == "libmpv.2.dylib" || path == "libmpv.dylib"));
+        assert!(
+            candidates
+                .iter()
+                .any(|path| path.contains("Frameworks/libmpv")),
+            "{candidates:?}"
+        );
+        assert!(
+            candidates
+                .first()
+                .is_some_and(|path| path.contains("Frameworks/libmpv")),
+            "{candidates:?}"
+        );
     }
 
     #[test]
     fn libmpv_library_candidates_use_macos_contents_frameworks() {
-        let candidates = libmpv_library_candidates_for_executable(Some(&PathBuf::from(
-            "/Applications/Velo.app/Contents/MacOS/Velo",
+        let candidates = normalize_candidate_paths(libmpv_library_candidates_for_executable(Some(
+            &PathBuf::from("/Applications/Velo.app/Contents/MacOS/Velo"),
         )));
 
-        assert!(candidates
-            .contains(&"/Applications/Velo.app/Contents/Frameworks/libmpv.2.dylib".into(),));
+        assert!(
+            candidates
+                .contains(&"/Applications/Velo.app/Contents/Frameworks/libmpv.2.dylib".into(),),
+            "{candidates:?}"
+        );
         assert!(!candidates
             .iter()
             .any(|path| path.contains(".app/Frameworks/libmpv")));
@@ -1248,12 +1316,15 @@ mod tests {
 
     #[test]
     fn libmpv_library_candidates_include_repo_runtime_for_dev() {
-        let candidates = libmpv_library_candidates_for_executable(Some(&PathBuf::from(
-            "/workspace/velo/src-tauri/target/debug/velo",
+        let candidates = normalize_candidate_paths(libmpv_library_candidates_for_executable(Some(
+            &PathBuf::from("/workspace/velo/src-tauri/target/debug/velo"),
         )));
 
-        assert!(candidates
-            .contains(&"/workspace/velo/src-tauri/runtime/macos/lib/libmpv.2.dylib".into(),));
+        assert!(
+            candidates
+                .contains(&"/workspace/velo/src-tauri/runtime/macos/lib/libmpv.2.dylib".into(),),
+            "{candidates:?}"
+        );
     }
 
     #[cfg(target_os = "windows")]
@@ -1266,31 +1337,31 @@ mod tests {
 
     #[test]
     fn libmpv_library_candidates_include_windows_packaged_runtime() {
-        let candidates = libmpv_library_candidates_for_executable(Some(&PathBuf::from(
-            "C:/Program Files/Velo/Velo.exe",
+        let candidates = normalize_candidate_paths(libmpv_library_candidates_for_executable(Some(
+            &PathBuf::from("C:/Program Files/Velo/Velo.exe"),
         )));
         let mpv_dll = PathBuf::from("C:/Program Files/Velo/resources/bin/mpv-2.dll")
             .to_string_lossy()
-            .into_owned();
+            .replace('\\', "/");
         let libmpv_dll = PathBuf::from("C:/Program Files/Velo/resources/bin/libmpv-2.dll")
             .to_string_lossy()
-            .into_owned();
+            .replace('\\', "/");
 
-        assert!(candidates.contains(&mpv_dll));
-        assert!(candidates.contains(&libmpv_dll));
+        assert!(candidates.contains(&mpv_dll), "{candidates:?}");
+        assert!(candidates.contains(&libmpv_dll), "{candidates:?}");
     }
 
     #[test]
     fn libmpv_library_candidates_include_windows_repo_runtime_for_dev() {
-        let candidates = libmpv_library_candidates_for_executable(Some(&PathBuf::from(
-            "C:/workspace/velo/src-tauri/target/debug/velo.exe",
+        let candidates = normalize_candidate_paths(libmpv_library_candidates_for_executable(Some(
+            &PathBuf::from("C:/workspace/velo/src-tauri/target/debug/velo.exe"),
         )));
         let runtime_dll =
             PathBuf::from("C:/workspace/velo/src-tauri/runtime/windows/bin/mpv-2.dll")
                 .to_string_lossy()
-                .into_owned();
+                .replace('\\', "/");
 
-        assert!(candidates.contains(&runtime_dll));
+        assert!(candidates.contains(&runtime_dll), "{candidates:?}");
     }
 
     #[test]
@@ -1381,10 +1452,8 @@ mod tests {
         let param = super::open_gl_api_type_param();
 
         assert_eq!(param.param_type, MPV_RENDER_PARAM_API_TYPE);
-        assert_eq!(
-            param.data.cast_const().cast::<u8>(),
-            MPV_RENDER_API_TYPE_OPENGL.as_ptr()
-        );
+        let api_name = unsafe { CStr::from_ptr(param.data.cast_const().cast()) };
+        assert_eq!(api_name.to_bytes_with_nul(), MPV_RENDER_API_TYPE_OPENGL);
     }
 
     #[test]
