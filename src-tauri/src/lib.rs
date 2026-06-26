@@ -1,11 +1,13 @@
 #![allow(unexpected_cfgs)]
 
+#[cfg(not(test))]
 pub mod commands;
 pub mod emby;
 pub mod errors;
 pub mod player;
 pub mod storage;
 
+#[cfg(not(test))]
 use commands::{
     fonts::list_system_fonts,
     playback::{
@@ -21,17 +23,23 @@ use commands::{
         validate_server,
     },
 };
+#[cfg(not(test))]
 use emby::client::EmbyClient;
+#[cfg(not(test))]
 use player::{
     backend::PlayerBackend,
     libmpv::{create_player_backend, PlayerBackendMode},
     session::PlaybackSessionState,
     window_fit::fitted_playback_window_size,
 };
+#[cfg(not(test))]
 use std::sync::Mutex;
+#[cfg(not(test))]
 use storage::encrypted_store::EncryptedStore;
+#[cfg(not(test))]
 use tauri::{Manager, PhysicalSize, WebviewWindow};
 
+#[cfg(not(test))]
 pub struct AppState {
     pub emby: EmbyClient,
     pub store: Mutex<EncryptedStore>,
@@ -40,6 +48,7 @@ pub struct AppState {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[cfg(not(test))]
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState {
@@ -96,6 +105,7 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
+#[cfg(not(test))]
 fn configure_initial_main_window(window: &WebviewWindow) {
     let work_area = window
         .current_monitor()
