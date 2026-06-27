@@ -38,8 +38,8 @@ jobs:
 
       - name: Install Codex CLI
         run: |
-          curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          npm install -g @openai/codex
+          codex --version
 
       - name: Run Codex review
         id: codex
