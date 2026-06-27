@@ -93,6 +93,7 @@ describe("播放控制栏辅助逻辑", () => {
         key: " ",
         repeat: false,
         playbackVisible: false,
+        phase: "playing",
         targetEditable: false,
         fullscreen: false,
       }),
@@ -102,7 +103,21 @@ describe("播放控制栏辅助逻辑", () => {
         key: " ",
         repeat: false,
         playbackVisible: true,
+        phase: "playing",
         targetEditable: true,
+        fullscreen: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("does not run keyboard playback commands while the kernel is still starting", () => {
+    expect(
+      keyboardShortcutAction({
+        key: " ",
+        repeat: false,
+        playbackVisible: true,
+        phase: "creatingKernel",
+        targetEditable: false,
         fullscreen: false,
       }),
     ).toBeNull();
@@ -114,6 +129,7 @@ describe("播放控制栏辅助逻辑", () => {
         key: " ",
         repeat: false,
         playbackVisible: true,
+        phase: "playing",
         targetEditable: false,
         fullscreen: false,
       }),
@@ -124,6 +140,7 @@ describe("播放控制栏辅助逻辑", () => {
     const base = {
       repeat: false,
       playbackVisible: true,
+      phase: "playing" as const,
       targetEditable: false,
       fullscreen: true,
     };
