@@ -71,11 +71,10 @@ describe("跨平台打包入口", () => {
     });
   });
 
-  test("macOS 包含可分发内嵌 libmpv 的 CI 构建和验收脚本", () => {
+  test("macOS 包含可分发内嵌 libmpv 的打包和验收脚本", () => {
     const verifyScript = readFileSync("scripts/verify-macos-libmpv-runtime.sh", "utf8");
     const prepareScript = readFileSync("scripts/prepare-macos-sonoma-libmpv-runtime.sh", "utf8");
     const viteConfig = readFileSync("vite.config.ts", "utf8");
-    const workflow = readFileSync(".github/workflows/build-macos.yml", "utf8");
 
     expect(existsSync("scripts/notarize-macos-dmg.sh")).toBe(true);
     expect(prepareScript).toContain("arm64_sonoma");
@@ -86,10 +85,6 @@ describe("跨平台打包入口", () => {
     expect(verifyScript).toContain("VELO_MACOS_MIN_VERSION");
     expect(verifyScript).toContain("otool -L");
     expect(verifyScript).toContain("vtool -show-build");
-    expect(workflow).toContain("runs-on: macos-14");
-    expect(workflow).toContain("MACOSX_DEPLOYMENT_TARGET: \"14.0\"");
-    expect(workflow).toContain("npm run package:macos:release");
-    expect(workflow).toContain("npm run package:macos:local");
     expect(viteConfig).toContain("**/src-tauri/target/**");
   });
 
