@@ -6,6 +6,7 @@ import { createMemoryHistory, createRouter } from "vue-router";
 import { useMediaStore } from "../../app/stores/media";
 import { useSessionStore } from "../../app/stores/session";
 import MediaListPage from "./MediaListPage.vue";
+import packageJson from "../../../package.json";
 import { fetchLibraryItems, fetchLibraryViews, fetchMediaItems } from "../../services/emby/media";
 
 vi.mock("../../services/emby/media", async (importOriginal) => {
@@ -147,6 +148,7 @@ describe("MediaListPage", () => {
     findSettingsTab(document.body, "关于").click();
     await nextTick();
     expect(dialog?.textContent).toContain("Velo");
+    expect(dialog?.textContent).toContain(`v${packageJson.version}`);
     expect(dialog?.textContent).not.toContain("https://baidu.com/");
   });
 

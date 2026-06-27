@@ -5,6 +5,7 @@ import { useFontStore } from "../../../app/stores/font";
 import { usePlaybackStore } from "../../../app/stores/playback";
 import { useSessionStore } from "../../../app/stores/session";
 import { themeOptions, useThemeStore, type ThemePreference } from "../../../app/stores/theme";
+import { DISPLAY_APP_VERSION } from "../../../app/version";
 import logoUrl from "../../../assets/velo-logo.svg";
 
 const emit = defineEmits<{
@@ -145,6 +146,7 @@ function selectFont(event: Event) {
           <section v-else class="settings-panel settings-about">
             <img :src="logoUrl" alt="Velo" />
             <strong>Velo</strong>
+            <span class="settings-about-version">{{ DISPLAY_APP_VERSION }}</span>
           </section>
         </div>
       </section>

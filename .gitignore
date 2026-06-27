@@ -27,7 +27,8 @@ dist-ssr
 *.local
 
 # Downloaded by scripts/prepare-windows-mpv-runtime.sh for Windows packages.
-src-tauri/runtime/windows/bin/
+src-tauri/runtime/windows/bin/*
+!src-tauri/runtime/windows/bin/.gitkeep
 
 # Editor directories and files
 .vscode/*
