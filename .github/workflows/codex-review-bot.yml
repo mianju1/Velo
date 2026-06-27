@@ -21,16 +21,32 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Configure Codex provider
+        env:
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.codex-home"
+          cat > "$GITHUB_WORKSPACE/.codex-home/config.toml" <<EOF
+          model = "codex-auto-review"
+          model_provider = "third_party"
+
+          [model_providers.third_party]
+          name = "Third party OpenAI-compatible provider"
+          base_url = "$OPENAI_BASE_URL"
+          env_key = "OPENAI_API_KEY"
+          EOF
+
       - name: Run Codex review
         id: codex
         uses: openai/codex-action@v1
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          responses-api-endpoint: ${{ secrets.OPENAI_RESPONSES_API_ENDPOINT }}
           model: codex-auto-review
           prompt-file: .github/codex/prompts/review.md
           output-file: codex-review.md
           sandbox: read-only
+          codex-home: ${{ github.workspace }}/.codex-home
 
       - name: Post Codex review comment
         if: steps.codex.outputs.final-message != ''
