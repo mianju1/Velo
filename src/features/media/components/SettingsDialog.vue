@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
+import { useFontStore } from "../../../app/stores/font";
 import { usePlaybackStore } from "../../../app/stores/playback";
 import { useSessionStore } from "../../../app/stores/session";
 import { themeOptions, useThemeStore, type ThemePreference } from "../../../app/stores/theme";
+import { DISPLAY_APP_VERSION } from "../../../app/version";
 import logoUrl from "../../../assets/velo-logo.svg";
 
 const emit = defineEmits<{
@@ -11,6 +13,7 @@ const emit = defineEmits<{
 }>();
 
 const router = useRouter();
+const font = useFontStore();
 const playback = usePlaybackStore();
 const session = useSessionStore();
 const theme = useThemeStore();
@@ -26,6 +29,11 @@ function switchAccount() {
 
 function selectTheme(preference: ThemePreference) {
   theme.setPreference(preference);
+}
+
+function selectFont(event: Event) {
+  const select = event.currentTarget as HTMLSelectElement;
+  font.setFontFamily(select.value);
 }
 </script>
 
@@ -99,6 +107,25 @@ function selectTheme(preference: ThemePreference) {
                 </button>
               </div>
             </div>
+            <div class="settings-card settings-font-card">
+              <label for="settings-font-select">界面字体</label>
+              <select
+                id="settings-font-select"
+                aria-label="界面字体"
+                :disabled="font.loading"
+                :value="font.selectedFamily"
+                @change="selectFont"
+              >
+                <option
+                  v-for="option in font.fontOptions"
+                  :key="`${option.source}:${option.family}`"
+                  :value="option.family"
+                >
+                  {{ option.label }}{{ option.source === "built-in" ? "（默认）" : "" }}
+                </option>
+              </select>
+              <small v-if="font.error" class="settings-font-error">{{ font.error }}</small>
+            </div>
             <div class="settings-card">
               <span>缓存</span>
               <strong>{{ playback.cacheSizeLabel }}</strong>
@@ -119,6 +146,7 @@ function selectTheme(preference: ThemePreference) {
           <section v-else class="settings-panel settings-about">
             <img :src="logoUrl" alt="Velo" />
             <strong>Velo</strong>
+            <span class="settings-about-version">{{ DISPLAY_APP_VERSION }}</span>
           </section>
         </div>
       </section>

@@ -1,12 +1,15 @@
 #![allow(unexpected_cfgs)]
 
+#[cfg(not(test))]
 pub mod commands;
 pub mod emby;
 pub mod errors;
 pub mod player;
 pub mod storage;
 
+#[cfg(not(test))]
 use commands::{
+    fonts::list_system_fonts,
     playback::{
         clear_playback_cache_command, get_playback_cache_status, mpv_disable_subtitle,
         mpv_get_status, mpv_load_subtitle, mpv_pause, mpv_resume, mpv_seek,
@@ -20,17 +23,23 @@ use commands::{
         validate_server,
     },
 };
+#[cfg(not(test))]
 use emby::client::EmbyClient;
+#[cfg(not(test))]
 use player::{
     backend::PlayerBackend,
     libmpv::{create_player_backend, PlayerBackendMode},
     session::PlaybackSessionState,
     window_fit::fitted_playback_window_size,
 };
+#[cfg(not(test))]
 use std::sync::Mutex;
+#[cfg(not(test))]
 use storage::encrypted_store::EncryptedStore;
+#[cfg(not(test))]
 use tauri::{Manager, PhysicalSize, WebviewWindow};
 
+#[cfg(not(test))]
 pub struct AppState {
     pub emby: EmbyClient,
     pub store: Mutex<EncryptedStore>,
@@ -39,6 +48,7 @@ pub struct AppState {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[cfg(not(test))]
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState {
@@ -88,12 +98,14 @@ pub fn run() {
             mpv_set_buffer_profile,
             report_playback_progress,
             get_playback_cache_status,
-            clear_playback_cache_command
+            clear_playback_cache_command,
+            list_system_fonts
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 
+#[cfg(not(test))]
 fn configure_initial_main_window(window: &WebviewWindow) {
     let work_area = window
         .current_monitor()

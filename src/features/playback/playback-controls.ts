@@ -23,6 +23,7 @@ export type PlaybackShortcutContext = {
   key: string;
   repeat: boolean;
   playbackVisible: boolean;
+  phase: PlaybackControlPhase;
   targetEditable: boolean;
   fullscreen: boolean;
 };
@@ -91,8 +92,12 @@ export function shouldRenderPlaybackOverlay(playbackVisible: boolean) {
   return playbackVisible;
 }
 
+export function shouldUsePlaybackLoadingBackdrop(phase: PlaybackControlPhase) {
+  return phase === "creatingKernel" || phase === "loadingVideo";
+}
+
 export function keyboardShortcutAction(context: PlaybackShortcutContext): PlaybackShortcutAction | null {
-  if (!context.playbackVisible || context.targetEditable) {
+  if (!context.playbackVisible || context.targetEditable || !canUsePlaybackControls(context.phase)) {
     return null;
   }
 

@@ -5,6 +5,7 @@ import { createApp, nextTick, type App } from "vue";
 import { usePlaybackStore } from "../../app/stores/playback";
 import { useSessionStore } from "../../app/stores/session";
 import {
+  disableSubtitle,
   loadSubtitle,
   pausePlayback,
   seekPlayback,
@@ -27,6 +28,7 @@ vi.mock("../../services/playback/playback", () => ({
   stopPlayback: vi.fn(),
   getPlaybackCacheStatus: vi.fn().mockResolvedValue({ sizeBytes: 0, path: "/tmp/cache" }),
   loadSubtitle: vi.fn(),
+  disableSubtitle: vi.fn(),
 }));
 
 describe("PlaybackControls", () => {
@@ -65,6 +67,56 @@ describe("PlaybackControls", () => {
     overlay?.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
 
     expect(pausePlayback).toHaveBeenCalled();
+  });
+
+  it("uses a black overlay backdrop while loading and removes it when video is playing", async () => {
+    const pinia = createPinia();
+    const root = document.createElement("div");
+    document.body.append(root);
+    app = createApp(PlaybackControls);
+    app.use(pinia);
+    app.mount(root);
+
+    const playback = usePlaybackStore(pinia);
+    playback.current = {
+      itemId: "item-1",
+      mediaSourceId: "source-1",
+      playMethod: "direct",
+    };
+    playback.phase = "loadingVideo";
+    await nextTick();
+
+    const overlay = root.querySelector<HTMLElement>(".playback-overlay");
+    expect(overlay).not.toBeNull();
+    expect(overlay?.classList.contains("playback-overlay--loading")).toBe(true);
+
+    playback.phase = "playing";
+    await nextTick();
+
+    expect(overlay?.classList.contains("playback-overlay--loading")).toBe(false);
+  });
+
+  it("keeps the black loading backdrop while loading even when the timeline becomes seek ready", async () => {
+    const pinia = createPinia();
+    const root = document.createElement("div");
+    document.body.append(root);
+    app = createApp(PlaybackControls);
+    app.use(pinia);
+    app.mount(root);
+
+    const playback = usePlaybackStore(pinia);
+    playback.current = {
+      itemId: "item-1",
+      mediaSourceId: "source-1",
+      playMethod: "direct",
+    };
+    playback.phase = "loadingVideo";
+    playback.seekReady = true;
+    await nextTick();
+
+    const overlay = root.querySelector<HTMLElement>(".playback-overlay");
+    expect(overlay).not.toBeNull();
+    expect(overlay?.classList.contains("playback-overlay--loading")).toBe(true);
   });
 
   it("工具栏隐藏后鼠标移到顶部边缘会显示，并在离开工具栏时继续自动隐藏", async () => {
@@ -484,6 +536,131 @@ describe("PlaybackControls", () => {
     expect(root.querySelector(".shortcut-feedback")).toBeNull();
   });
 
+  it("opens and closes the playback rate menu and applies a clicked rate", async () => {
+    const pinia = createPinia();
+    const root = document.createElement("div");
+    document.body.append(root);
+    app = createApp(PlaybackControls);
+    app.use(pinia);
+    app.mount(root);
+
+    const playback = usePlaybackStore(pinia);
+    playback.current = {
+      itemId: "item-1",
+      mediaSourceId: "source-1",
+      playMethod: "direct",
+    };
+    playback.phase = "playing";
+    playback.seekReady = true;
+    playback.rate = 1;
+    await nextTick();
+    await nextTick();
+
+    const rateButton = root.querySelector<HTMLButtonElement>(".rate-picker button");
+    const overlay = root.querySelector<HTMLElement>(".playback-overlay");
+    expect(rateButton).not.toBeNull();
+
+    rateButton?.focus();
+    rateButton?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    await nextTick();
+
+    expect(document.activeElement).toBe(rateButton);
+    expect(document.activeElement).not.toBe(overlay);
+
+    rateButton?.click();
+    await nextTick();
+
+    expect(rateButton?.getAttribute("aria-expanded")).toBe("true");
+    expect(root.querySelectorAll(".rate-picker [role='option']")).toHaveLength(6);
+
+    rateButton?.click();
+    await nextTick();
+
+    expect(root.querySelector(".rate-picker [role='listbox']")).toBeNull();
+
+    rateButton?.click();
+    await nextTick();
+    root.querySelectorAll<HTMLButtonElement>(".rate-picker [role='option']")[4]?.click();
+    await nextTick();
+
+    expect(setPlaybackRate).toHaveBeenCalledWith(1.5);
+    expect(root.querySelector(".rate-picker [role='listbox']")).toBeNull();
+  });
+
+  it("opens and closes the subtitle menu and applies subtitle selections", async () => {
+    vi.mocked(loadSubtitle).mockResolvedValue(undefined);
+    vi.mocked(disableSubtitle).mockResolvedValue(undefined);
+    const pinia = createPinia();
+    const root = document.createElement("div");
+    document.body.append(root);
+    app = createApp(PlaybackControls);
+    app.use(pinia);
+    app.mount(root);
+
+    const session = useSessionStore(pinia);
+    session.activeSession = {
+      server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+      account: { id: "user-1", serverId: "server-1", name: "alice" },
+      accessToken: "token-1",
+    };
+    const playback = usePlaybackStore(pinia);
+    playback.current = {
+      itemId: "item-1",
+      mediaSourceId: "source-1",
+      playMethod: "direct",
+    };
+    playback.phase = "playing";
+    playback.seekReady = true;
+    playback.subtitleTracks = [
+      { id: "zh", mediaSourceId: "source-1", streamIndex: 3, codec: "ass", language: "chi", label: "中文" },
+    ];
+    await nextTick();
+    await nextTick();
+
+    const subtitleButton = root.querySelector<HTMLButtonElement>(".subtitle-picker button");
+    const overlay = root.querySelector<HTMLElement>(".playback-overlay");
+    expect(subtitleButton).not.toBeNull();
+
+    subtitleButton?.focus();
+    subtitleButton?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    await nextTick();
+
+    expect(document.activeElement).toBe(subtitleButton);
+    expect(document.activeElement).not.toBe(overlay);
+
+    subtitleButton?.click();
+    await nextTick();
+
+    expect(subtitleButton?.getAttribute("aria-expanded")).toBe("true");
+    expect(root.querySelectorAll(".subtitle-picker [role='option']")).toHaveLength(2);
+
+    subtitleButton?.click();
+    await nextTick();
+
+    expect(root.querySelector(".subtitle-picker [role='listbox']")).toBeNull();
+
+    subtitleButton?.click();
+    await nextTick();
+    root.querySelectorAll<HTMLButtonElement>(".subtitle-picker [role='option']")[1]?.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    await nextTick();
+
+    expect(loadSubtitle).toHaveBeenCalledWith(
+      "https://emby.example.test/Videos/item-1/source-1/Subtitles/3/Stream.ass?api_key=token-1",
+    );
+    expect(root.querySelector(".subtitle-picker [role='listbox']")).toBeNull();
+
+    subtitleButton?.click();
+    await nextTick();
+    root.querySelectorAll<HTMLButtonElement>(".subtitle-picker [role='option']")[0]?.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    await nextTick();
+
+    expect(disableSubtitle).toHaveBeenCalled();
+  });
+
   it("切换字幕后焦点回到播放层，快捷键继续生效", async () => {
     vi.mocked(loadSubtitle).mockResolvedValue(undefined);
     const pinia = createPinia();
@@ -512,13 +689,14 @@ describe("PlaybackControls", () => {
     ];
     await nextTick();
 
-    const subtitleSelect = root.querySelector<HTMLSelectElement>(".subtitle-field select");
+    const subtitleButton = root.querySelector<HTMLButtonElement>(".subtitle-picker button");
     const overlay = root.querySelector<HTMLElement>(".playback-overlay");
-    subtitleSelect?.focus();
-    expect(document.activeElement).toBe(subtitleSelect);
+    subtitleButton?.focus();
+    expect(document.activeElement).toBe(subtitleButton);
 
-    subtitleSelect!.value = "zh";
-    subtitleSelect?.dispatchEvent(new Event("change", { bubbles: true }));
+    subtitleButton?.click();
+    await nextTick();
+    root.querySelectorAll<HTMLButtonElement>(".subtitle-picker [role='option']")[1]?.click();
     await nextTick();
     await nextTick();
 
@@ -554,6 +732,41 @@ describe("PlaybackControls", () => {
     await nextTick();
 
     expect(stopPlayback).toHaveBeenCalled();
+  });
+
+  it("disables playback controls and shortcuts while stopping", async () => {
+    const pinia = createPinia();
+    const root = document.createElement("div");
+    document.body.append(root);
+    app = createApp(PlaybackControls);
+    app.use(pinia);
+    app.mount(root);
+
+    const playback = usePlaybackStore(pinia);
+    playback.current = {
+      itemId: "item-1",
+      mediaSourceId: "source-1",
+      playMethod: "direct",
+    };
+    playback.phase = "stopping";
+    playback.seekReady = true;
+    await nextTick();
+
+    const stopButton = root.querySelector<HTMLButtonElement>(".stop-button");
+    const pauseButton = root.querySelector<HTMLButtonElement>(".playback-main .control-button");
+    expect(stopButton?.disabled).toBe(true);
+    expect(pauseButton?.disabled).toBe(true);
+
+    stopButton?.click();
+    pauseButton?.click();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "f" }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp" }));
+
+    expect(stopPlayback).not.toHaveBeenCalled();
+    expect(pausePlayback).not.toHaveBeenCalled();
+    expect(setPlaybackFullscreen).not.toHaveBeenCalled();
+    expect(setPlaybackVolume).not.toHaveBeenCalled();
   });
 
   it("右方向键在 0.5 秒内松开时只快进 15 秒", async () => {

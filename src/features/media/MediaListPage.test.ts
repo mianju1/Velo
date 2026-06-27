@@ -3,9 +3,11 @@ import { createPinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp, nextTick, type App } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
+import { useMediaStore } from "../../app/stores/media";
 import { useSessionStore } from "../../app/stores/session";
 import MediaListPage from "./MediaListPage.vue";
-import { fetchLibraryItems, fetchLibraryViews } from "../../services/emby/media";
+import packageJson from "../../../package.json";
+import { fetchLibraryItems, fetchLibraryViews, fetchMediaItems } from "../../services/emby/media";
 
 vi.mock("../../services/emby/media", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../services/emby/media")>();
@@ -13,6 +15,7 @@ vi.mock("../../services/emby/media", async (importOriginal) => {
     ...actual,
     fetchLibraryItems: vi.fn(),
     fetchLibraryViews: vi.fn(),
+    fetchMediaItems: vi.fn(),
   };
 });
 
@@ -39,6 +42,11 @@ describe("MediaListPage", () => {
           videoHeight: 2160,
         },
       ],
+    });
+    vi.mocked(fetchMediaItems).mockResolvedValue({
+      total: 1,
+      rawItemCount: 1,
+      items: [{ id: "favorite-1", name: "Favorite Movie", type: "Movie" }],
     });
   });
 
@@ -140,6 +148,7 @@ describe("MediaListPage", () => {
     findSettingsTab(document.body, "关于").click();
     await nextTick();
     expect(dialog?.textContent).toContain("Velo");
+    expect(dialog?.textContent).toContain(`v${packageJson.version}`);
     expect(dialog?.textContent).not.toContain("https://baidu.com/");
   });
 
@@ -229,6 +238,18 @@ describe("MediaListPage", () => {
 
     expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
   });
+
+  it("does not refetch sidebar library views when opening favorites with cached views", async () => {
+    await mountFavoritesPageWithCachedViews();
+
+    expect(fetchMediaItems).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "favorites",
+        startIndex: 0,
+      }),
+    );
+    expect(fetchLibraryViews).not.toHaveBeenCalled();
+  });
 });
 
 async function mountMediaListPage(options: { contentWidth?: number } = {}) {
@@ -262,6 +283,41 @@ async function mountMediaListPage(options: { contentWidth?: number } = {}) {
     account: { id: "user-1", serverId: "server-1", name: "alice" },
     accessToken: "token-1",
   };
+  app.mount(root);
+  await flush();
+
+  return root;
+}
+
+async function mountFavoritesPageWithCachedViews() {
+  const pinia = createPinia();
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: "/library/:kind", component: MediaListPage },
+      { path: "/library-view/:libraryId", component: MediaListPage },
+      { path: "/media/:itemId", component: { template: "<div />" } },
+      { path: "/search", component: { template: "<div />" } },
+    ],
+  });
+  router.push("/library/favorites");
+  await router.isReady();
+
+  const root = document.createElement("div");
+  document.body.append(root);
+  app = createApp(MediaListPage);
+  app.use(pinia);
+  app.use(router);
+  const session = useSessionStore();
+  session.activeSession = {
+    server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+    account: { id: "user-1", serverId: "server-1", name: "alice" },
+    accessToken: "token-1",
+  };
+
+  await useMediaStore().loadViews();
+  vi.mocked(fetchLibraryViews).mockClear();
+
   app.mount(root);
   await flush();
 

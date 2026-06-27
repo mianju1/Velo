@@ -7,6 +7,7 @@ import {
   clearItemPlaybackProgress,
   fetchEpisodeItems,
   fetchLibraryItems,
+  fetchLibraryViews,
   fetchMediaDetail,
   fetchMediaItems,
   fetchSeasonItems,
@@ -21,6 +22,7 @@ vi.mock("../../services/emby/media", async (importOriginal) => {
     clearItemPlaybackProgress: vi.fn(),
     fetchEpisodeItems: vi.fn(),
     fetchLibraryItems: vi.fn(),
+    fetchLibraryViews: vi.fn(),
     fetchMediaDetail: vi.fn(),
     fetchMediaItems: vi.fn(),
     fetchSeasonItems: vi.fn(),
@@ -33,6 +35,7 @@ describe("media store", () => {
     setActivePinia(createPinia());
     vi.mocked(fetchEpisodeItems).mockReset();
     vi.mocked(fetchLibraryItems).mockReset();
+    vi.mocked(fetchLibraryViews).mockReset();
     vi.mocked(fetchMediaDetail).mockReset();
     vi.mocked(fetchMediaItems).mockReset();
     vi.mocked(fetchSeasonItems).mockReset();
@@ -134,6 +137,25 @@ describe("media store", () => {
 
     expect(fetchLibraryItems).toHaveBeenCalledTimes(1);
     expect(media.library.hasMore).toBe(false);
+  });
+
+  it("does not refetch library views when search or favorites remount the sidebar after views are loaded", async () => {
+    const session = useSessionStore();
+    session.activeSession = {
+      server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+      account: { id: "user-1", serverId: "server-1", name: "alice" },
+      accessToken: "token-1",
+    };
+    vi.mocked(fetchLibraryViews).mockResolvedValue([
+      { id: "library-1", name: "Movies", type: "CollectionFolder", collectionType: "movies" },
+    ]);
+    const media = useMediaStore();
+
+    await media.loadViews();
+    await media.loadViews();
+
+    expect(fetchLibraryViews).toHaveBeenCalledTimes(1);
+    expect(media.views.items.map((view) => view.id)).toEqual(["library-1"]);
   });
 
   it("加载单集详情时同步加载同季选集", async () => {

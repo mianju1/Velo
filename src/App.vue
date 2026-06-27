@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, watch } from "vue";
+import { useFontStore } from "./app/stores/font";
 import { usePlaybackStore } from "./app/stores/playback";
 import { useThemeStore } from "./app/stores/theme";
 import PlaybackControls from "./features/playback/PlaybackControls.vue";
 
 const playback = usePlaybackStore();
+const font = useFontStore();
 const theme = useThemeStore();
 const appClasses = computed(() => ({
   "app-shell--playback": playback.playbackVisible,
@@ -19,6 +21,12 @@ watch(
 );
 
 watch(
+  () => font.selectedFamily,
+  () => font.applyToDocument(),
+  { immediate: true },
+);
+
+watch(
   () => playback.playbackVisible,
   (visible) => {
     document.body.classList.toggle("body--playback", visible);
@@ -28,6 +36,7 @@ watch(
 
 onMounted(() => {
   stopSystemThemeSync = theme.startSystemThemeSync();
+  void font.loadSystemFonts();
 });
 
 onUnmounted(() => {
@@ -46,6 +55,38 @@ onUnmounted(() => {
 </template>
 
 <style>
+@font-face {
+  font-family: "MapleMono-CN";
+  src: url("./assets/fonts/MapleMono-CN-Regular.ttf") format("truetype");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "MapleMono-CN";
+  src: url("./assets/fonts/MapleMono-CN-Bold.ttf") format("truetype");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 700;
+}
+
+@font-face {
+  font-family: "MapleMono-CN";
+  src: url("./assets/fonts/MapleMono-CN-Italic.ttf") format("truetype");
+  font-display: swap;
+  font-style: italic;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "MapleMono-CN";
+  src: url("./assets/fonts/MapleMono-CN-BoldItalic.ttf") format("truetype");
+  font-display: swap;
+  font-style: italic;
+  font-weight: 700;
+}
+
 :root {
   color: var(--text-primary);
   background: transparent;
@@ -68,8 +109,10 @@ onUnmounted(() => {
   --shadow: 0 18px 52px rgba(20, 31, 45, 0.1);
   --scrollbar-track: color-mix(in srgb, var(--surface-panel) 76%, transparent);
   --scrollbar-thumb: rgba(120, 132, 146, 0.36);
+  --app-font-family: "MapleMono-CN";
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    var(--app-font-family), Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -970,6 +1013,22 @@ h2 {
   grid-column: 1;
 }
 
+.settings-font-card label {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-font-card select {
+  min-height: 40px;
+}
+
+.settings-font-error {
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .theme-switch {
   --theme-index: 2;
   position: relative;
@@ -1061,14 +1120,41 @@ h2 {
 }
 
 .settings-about {
-  justify-items: start;
+  min-height: 280px;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 24px 0 32px;
+  text-align: center;
 }
 
 .settings-about img {
-  width: 64px;
-  height: 64px;
-  border-radius: 16px;
-  box-shadow: 0 12px 26px rgba(29, 127, 194, 0.22);
+  width: 78px;
+  height: 78px;
+  border-radius: 20px;
+  box-shadow: 0 16px 34px rgba(29, 127, 194, 0.24);
+}
+
+.settings-about strong {
+  margin-top: 4px;
+  color: var(--text-primary);
+  font-size: 24px;
+  line-height: 1.15;
+}
+
+.settings-about-version {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 12px;
+  color: var(--text-secondary);
+  background: var(--surface-muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .media-sidebar-svg {
@@ -1525,6 +1611,118 @@ h2 {
   margin: 0 0 12px;
   color: var(--text-primary);
   font-size: 18px;
+}
+
+.detail-episode-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.detail-episode-heading h2 {
+  margin-bottom: 0;
+}
+
+.detail-episode-pagination {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.detail-episode-page-button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
+.detail-episode-page-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.detail-episode-page-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.detail-episode-page-input {
+  width: 48px;
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 8px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--panel) 86%, transparent);
+  text-align: center;
+  font: inherit;
+}
+
+.detail-episode-page-input:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.detail-episode-page-summary {
+  min-width: 40px;
+  text-align: center;
+}
+
+.detail-episode-slider {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--surface-raised);
+}
+
+.detail-episode-slider label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.detail-episode-slider label > span {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.detail-episode-slider strong {
+  justify-self: end;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.detail-episode-slider input[type="range"] {
+  grid-column: 1 / -1;
+  min-height: 28px;
+  padding: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.detail-episode-slider-title {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .detail-episode-grid {

@@ -104,6 +104,8 @@ export const usePlaybackStore = defineStore("playback", () => {
   const cacheLoading = ref(false);
   let statusPollTimer: ReturnType<typeof setInterval> | null = null;
   let statusPollGeneration = 0;
+  let playbackStartGeneration = 0;
+  let stopAfterStartGeneration: number | null = null;
   let statusPollInFlightGeneration: number | null = null;
   let pendingSeekInFlight = false;
   let appliedBufferProfile: PlaybackBufferProfile | null = null;
@@ -140,30 +142,56 @@ export const usePlaybackStore = defineStore("playback", () => {
       error.value = sessionRequiredError();
       return;
     }
+    if (current.value && (phase.value === "creatingKernel" || phase.value === "stopping")) {
+      return;
+    }
 
     const previousPlayback = current.value === null ? null : capturePlaybackSnapshot();
+    const startGeneration = ++playbackStartGeneration;
+    stopAfterStartGeneration = null;
     loading.value = true;
     error.value = null;
     phase.value = "creatingKernel";
     loadingDetail.value = "正在创建播放内核";
+    stopStatusPolling();
+    current.value = pendingPlaybackResult(itemId, options.mediaSourceId);
+    paused.value = false;
+    positionSeconds.value = 0;
+    seekReady.value = false;
+    setPlaybackMetadata(options);
+    applyInitialPosition(options.initialPositionSeconds);
+    rate.value = 1;
+    subtitleTracks.value = [];
+    selectedSubtitleId.value = null;
+    pendingSubtitleId.value = null;
+    pendingSeekInFlight = false;
     try {
-      current.value = await startPlayback({
+      const startedPlayback = await startPlayback({
         serverId: session.server.id,
         userId: session.account.id,
         itemId,
         mediaSourceId: options.mediaSourceId,
       });
-      paused.value = false;
-      positionSeconds.value = 0;
-      seekReady.value = false;
-      setPlaybackMetadata(options);
-      applyInitialPosition(options.initialPositionSeconds);
-      rate.value = 1;
+      if (startGeneration !== playbackStartGeneration) {
+        return;
+      }
+
+      if (stopAfterStartGeneration === startGeneration) {
+        await stopStartedPlaybackAfterPendingStart(startGeneration, startedPlayback);
+        return;
+      }
+
+      current.value = startedPlayback;
       phase.value = "loadingVideo";
       loadingDetail.value = "正在加载视频";
       await applyBufferProfile("startup");
+      if (startGeneration !== playbackStartGeneration) {
+        return;
+      }
+
       startStatusPolling();
       await trySelectDefaultSubtitle({
+        generation: startGeneration,
         serverUrl: session.server.url,
         token: session.accessToken,
         itemId,
@@ -173,10 +201,22 @@ export const usePlaybackStore = defineStore("playback", () => {
       });
       void refreshCacheStatus();
     } catch (caught) {
+      if (startGeneration !== playbackStartGeneration) {
+        return;
+      }
+
+      if (stopAfterStartGeneration === startGeneration) {
+        stopAfterStartGeneration = null;
+        hidePlaybackView();
+        phase.value = "idle";
+        return;
+      }
+
       const appError = toAppError(caught);
-      if (previousPlayback && appError.code === "playback_source_unavailable") {
+      if (previousPlayback) {
         restorePlaybackSnapshot(previousPlayback);
         error.value = appError;
+        startStatusPolling();
       } else {
         current.value = null;
         error.value = appError;
@@ -185,15 +225,32 @@ export const usePlaybackStore = defineStore("playback", () => {
         stopStatusPolling();
       }
     } finally {
-      loading.value = false;
+      if (startGeneration === playbackStartGeneration) {
+        loading.value = false;
+      }
     }
   }
 
   async function stop() {
+    if (phase.value === "stopping") {
+      return;
+    }
+
+    if (current.value && phase.value === "creatingKernel") {
+      stopAfterStartGeneration = playbackStartGeneration;
+      loading.value = true;
+      error.value = null;
+      phase.value = "stopping";
+      loadingDetail.value = "正在停止播放";
+      clearPreview();
+      return;
+    }
+
     const finalPositionSeconds = current.value === null ? undefined : positionSeconds.value;
     loading.value = true;
     error.value = null;
     phase.value = "stopping";
+    playbackStartGeneration += 1;
     stopStatusPolling();
     hidePlaybackView();
     try {
@@ -205,6 +262,32 @@ export const usePlaybackStore = defineStore("playback", () => {
       phase.value = "failed";
     } finally {
       loading.value = false;
+    }
+  }
+
+  async function stopStartedPlaybackAfterPendingStart(startGeneration: number, startedPlayback: StartPlaybackResult) {
+    current.value = startedPlayback;
+    try {
+      await stopPlayback(undefined);
+      if (startGeneration !== playbackStartGeneration) {
+        return;
+      }
+
+      hidePlaybackView();
+      phase.value = "idle";
+      void refreshCacheStatus();
+    } catch (caught) {
+      if (startGeneration !== playbackStartGeneration) {
+        return;
+      }
+
+      error.value = toAppError(caught);
+      phase.value = "failed";
+      loadingDetail.value = "";
+    } finally {
+      if (stopAfterStartGeneration === startGeneration) {
+        stopAfterStartGeneration = null;
+      }
     }
   }
 
@@ -612,6 +695,7 @@ export const usePlaybackStore = defineStore("playback", () => {
   }
 
   async function trySelectDefaultSubtitle(options: {
+    generation: number;
     serverUrl: string;
     token: string;
     itemId: string;
@@ -619,23 +703,46 @@ export const usePlaybackStore = defineStore("playback", () => {
     tracks: MediaSubtitleTrack[];
     languages: readonly string[];
   }) {
-    subtitleTracks.value = options.tracks.filter((track) => track.mediaSourceId === options.mediaSourceId);
-    const preferred = selectPreferredSubtitleTrack(subtitleTracks.value, options.languages);
+    if (!isCurrentDefaultSubtitleTarget(options.generation, options.mediaSourceId)) {
+      return;
+    }
+
+    const tracks = options.tracks.filter((track) => track.mediaSourceId === options.mediaSourceId);
+    subtitleTracks.value = tracks;
+    const preferred = selectPreferredSubtitleTrack(tracks, options.languages);
 
     if (!preferred) {
-      selectedSubtitleId.value = null;
+      if (isCurrentDefaultSubtitleTarget(options.generation, options.mediaSourceId)) {
+        selectedSubtitleId.value = null;
+      }
       return;
     }
 
     try {
+      if (!isCurrentDefaultSubtitleTarget(options.generation, options.mediaSourceId)) {
+        return;
+      }
+
       await applySubtitleTrack(options.itemId, options.serverUrl, options.token, preferred);
+      if (!isCurrentDefaultSubtitleTarget(options.generation, options.mediaSourceId)) {
+        return;
+      }
+
       selectedSubtitleId.value = preferred.id;
     } catch {
       // 默认字幕加载失败不应打断已经启动的视频播放，用户仍可稍后手动选择字幕。
-      selectedSubtitleId.value = null;
+      if (isCurrentDefaultSubtitleTarget(options.generation, options.mediaSourceId)) {
+        selectedSubtitleId.value = null;
+      }
     } finally {
-      pendingSubtitleId.value = null;
+      if (isCurrentDefaultSubtitleTarget(options.generation, options.mediaSourceId)) {
+        pendingSubtitleId.value = null;
+      }
     }
+  }
+
+  function isCurrentDefaultSubtitleTarget(generation: number, mediaSourceId: string) {
+    return generation === playbackStartGeneration && current.value?.mediaSourceId === mediaSourceId;
   }
 
   function applyRuntimeStatus(status: PlaybackRuntimeStatus) {
@@ -650,7 +757,7 @@ export const usePlaybackStore = defineStore("playback", () => {
       return;
     }
 
-    if (!status.mediaLoaded || status.pausedForCache || positionSeconds.value === 0) {
+    if (!status.mediaLoaded || status.pausedForCache) {
       phase.value = "loadingVideo";
       loadingDetail.value = formatLoadingDetail(status.cacheSpeedBytesPerSecond);
       return;
@@ -812,6 +919,14 @@ function sessionRequiredError(): AppError {
     code: "session_required",
     message: "请先选择服务器并登录账号。",
     recoverable: true,
+  };
+}
+
+function pendingPlaybackResult(itemId: string, mediaSourceId: string | undefined): StartPlaybackResult {
+  return {
+    itemId,
+    mediaSourceId: mediaSourceId ?? "",
+    playMethod: "direct",
   };
 }
 

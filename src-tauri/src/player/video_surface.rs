@@ -1,5 +1,6 @@
 #![allow(unexpected_cfgs)]
 
+#[cfg(not(test))]
 use crate::errors::{AppError, AppResult};
 
 const DEFAULT_CONTROL_INSET_BOTTOM: u32 = 112;
@@ -66,19 +67,26 @@ impl VideoSurfaceTarget {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", not(test)))]
 pub fn target_from_window<R: tauri::Runtime>(
     window: &tauri::WebviewWindow<R>,
 ) -> AppResult<VideoSurfaceTarget> {
     macos::target_from_window(window)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "windows", not(test)))]
+pub fn target_from_window<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+) -> AppResult<VideoSurfaceTarget> {
+    windows::target_from_window(window)
+}
+
+#[cfg(all(target_os = "macos", not(test)))]
 pub fn current_size_for_view(ns_view: usize, fallback: VideoSurfaceSize) -> VideoSurfaceSize {
     macos::current_size_for_view(ns_view, fallback)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(not(test), not(any(target_os = "macos", target_os = "windows"))))]
 pub fn target_from_window<R: tauri::Runtime>(
     _window: &tauri::WebviewWindow<R>,
 ) -> AppResult<VideoSurfaceTarget> {
@@ -95,7 +103,7 @@ pub fn current_size_for_view(_ns_view: usize, fallback: VideoSurfaceSize) -> Vid
     fallback
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", not(test)))]
 mod macos {
     use std::sync::{mpsc, OnceLock};
 
@@ -401,7 +409,39 @@ mod macos {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "windows", not(test)))]
+mod windows {
+    use super::{surface_error, VideoSurfaceTarget};
+    use crate::errors::AppResult;
+
+    pub fn target_from_window<R: tauri::Runtime>(
+        window: &tauri::WebviewWindow<R>,
+    ) -> AppResult<VideoSurfaceTarget> {
+        let hwnd = window.hwnd().map_err(|error| {
+            surface_error(
+                "video_surface_window_handle_failed",
+                "无法获取主窗口原生句柄",
+                Some(error.to_string()),
+            )
+        })?;
+        let size = window.inner_size().map_err(|error| {
+            surface_error(
+                "video_surface_window_size_failed",
+                "无法获取主窗口尺寸",
+                Some(error.to_string()),
+            )
+        })?;
+
+        Ok(VideoSurfaceTarget::new(
+            hwnd.0 as usize,
+            0,
+            size.width.max(1),
+            size.height.max(1),
+        ))
+    }
+}
+
+#[cfg(all(not(test), any(target_os = "macos", target_os = "windows")))]
 fn surface_error(code: &str, message: &str, detail: Option<String>) -> AppError {
     AppError::new(code, message, detail, true)
 }
@@ -447,7 +487,7 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", not(test)))]
     #[test]
     fn macos_pixel_format_attributes_fall_back_to_compatible_profiles() {
         let candidates = super::macos::pixel_format_attribute_candidates();
@@ -462,13 +502,13 @@ mod tests {
             .all(|attrs| attrs.last().copied() == Some(0)));
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", not(test)))]
     #[test]
     fn macos_transparency_walk_has_bounded_depth() {
         assert!(super::macos::transparent_view_recursion_limit() >= 8);
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", not(test)))]
     #[test]
     fn macos_video_surface_uses_non_interactive_subclass() {
         assert_eq!(

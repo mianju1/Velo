@@ -13,6 +13,7 @@ import {
   selectEmbeddedSubtitle,
   setPlaybackBufferProfile,
   setPlaybackRate,
+  type StartPlaybackResult,
   startPlayback,
   stopPlayback,
 } from "../../services/playback/playback";
@@ -75,6 +76,183 @@ describe("playback store", () => {
     expect(playback.playbackVisible).toBe(true);
     expect(playback.phase).toBe("loadingVideo");
     expect(playback.loading).toBe(false);
+  });
+
+  it("shows the playback loading view before startPlayback resolves", async () => {
+    const session = useSessionStore();
+    session.activeSession = {
+      server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+      account: { id: "user-1", serverId: "server-1", name: "alice" },
+      accessToken: "token-1",
+    };
+    const startup = deferred<StartPlaybackResult>();
+    vi.mocked(startPlayback).mockReturnValue(startup.promise);
+    const playback = usePlaybackStore();
+
+    const playPromise = playback.playItem("item-1", { durationSeconds: 5400, title: "Pilot" });
+
+    expect(playback.current?.itemId).toBe("item-1");
+    expect(playback.playbackVisible).toBe(true);
+    expect(playback.loading).toBe(true);
+    expect(playback.phase).toBe("creatingKernel");
+    expect(playback.mediaTitle).toBe("Pilot");
+    expect(playback.durationSeconds).toBe(5400);
+
+    startup.resolve({ itemId: "item-1", mediaSourceId: "source-1", playMethod: "direct" });
+    await playPromise;
+
+    expect(playback.current?.mediaSourceId).toBe("source-1");
+    expect(playback.loading).toBe(false);
+  });
+
+  it("exits the optimistic playback view when first startup fails", async () => {
+    const session = useSessionStore();
+    session.activeSession = {
+      server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+      account: { id: "user-1", serverId: "server-1", name: "alice" },
+      accessToken: "token-1",
+    };
+    const startup = deferred<StartPlaybackResult>();
+    vi.mocked(startPlayback).mockReturnValue(startup.promise);
+    const playback = usePlaybackStore();
+
+    const playPromise = playback.playItem("item-1", { durationSeconds: 5400, title: "Pilot" });
+    expect(playback.playbackVisible).toBe(true);
+
+    startup.reject({ code: "playback_source_unavailable", message: "no playable source", recoverable: true });
+    await playPromise;
+
+    expect(playback.current).toBeNull();
+    expect(playback.playbackVisible).toBe(false);
+    expect(playback.phase).toBe("failed");
+    expect(playback.loading).toBe(false);
+    expect(playback.error?.message).toBe("no playable source");
+  });
+
+  it("restores the previous playback snapshot when replacing startup fails with a regular error", async () => {
+    const session = useSessionStore();
+    session.activeSession = {
+      server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+      account: { id: "user-1", serverId: "server-1", name: "alice" },
+      accessToken: "token-1",
+    };
+    vi.mocked(startPlayback)
+      .mockResolvedValueOnce({ itemId: "episode-1", mediaSourceId: "source-1", playMethod: "direct" })
+      .mockRejectedValueOnce({
+        code: "network_error",
+        message: "network failed",
+        recoverable: true,
+      });
+    const playback = usePlaybackStore();
+
+    await playback.playItem("episode-1", { title: "Old", durationSeconds: 1200 });
+    playback.phase = "playing";
+    playback.positionSeconds = 120;
+    playback.seekReady = true;
+
+    const playPromise = playback.playItem("episode-2", { title: "New", durationSeconds: 1300 });
+
+    expect(playback.current?.itemId).toBe("episode-2");
+    expect(playback.mediaTitle).toBe("New");
+
+    await playPromise;
+
+    expect(playback.current?.itemId).toBe("episode-1");
+    expect(playback.mediaTitle).toBe("Old");
+    expect(playback.durationSeconds).toBe(1200);
+    expect(playback.positionSeconds).toBe(120);
+    expect(playback.seekReady).toBe(true);
+    expect(playback.phase).toBe("playing");
+    expect(playback.playbackVisible).toBe(true);
+    expect(playback.error?.message).toBe("network failed");
+  });
+
+  it("stops backend playback after a pending startup resolves when stop is requested first", async () => {
+    const session = useSessionStore();
+    session.activeSession = {
+      server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+      account: { id: "user-1", serverId: "server-1", name: "alice" },
+      accessToken: "token-1",
+    };
+    const startup = deferred<StartPlaybackResult>();
+    vi.mocked(startPlayback).mockReturnValue(startup.promise);
+    vi.mocked(stopPlayback).mockResolvedValue(undefined);
+    const playback = usePlaybackStore();
+
+    const playPromise = playback.playItem("item-1", { durationSeconds: 5400, title: "Pilot" });
+    await playback.stop();
+
+    expect(stopPlayback).not.toHaveBeenCalled();
+    expect(playback.phase).toBe("stopping");
+    expect(playback.playbackVisible).toBe(true);
+
+    startup.resolve({ itemId: "item-1", mediaSourceId: "source-1", playMethod: "direct" });
+    await playPromise;
+
+    expect(stopPlayback).toHaveBeenCalledWith(undefined);
+    expect(playback.current).toBeNull();
+    expect(playback.playbackVisible).toBe(false);
+    expect(playback.phase).toBe("idle");
+  });
+
+  it("does not start a second backend playback while the first startup is pending", async () => {
+    const session = useSessionStore();
+    session.activeSession = {
+      server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+      account: { id: "user-1", serverId: "server-1", name: "alice" },
+      accessToken: "token-1",
+    };
+    const startup = deferred<StartPlaybackResult>();
+    vi.mocked(startPlayback).mockReturnValue(startup.promise);
+    const playback = usePlaybackStore();
+
+    const firstPlay = playback.playItem("item-1", { title: "First" });
+    await playback.playItem("item-2", { title: "Second" });
+
+    expect(startPlayback).toHaveBeenCalledTimes(1);
+    expect(playback.current?.itemId).toBe("item-1");
+    expect(playback.mediaTitle).toBe("First");
+
+    startup.resolve({ itemId: "item-1", mediaSourceId: "source-1", playMethod: "direct" });
+    await firstPlay;
+  });
+
+  it("restores the previous playback snapshot when replacing source selection fails", async () => {
+    const session = useSessionStore();
+    session.activeSession = {
+      server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+      account: { id: "user-1", serverId: "server-1", name: "alice" },
+      accessToken: "token-1",
+    };
+    vi.mocked(startPlayback)
+      .mockResolvedValueOnce({ itemId: "episode-1", mediaSourceId: "source-1", playMethod: "direct" })
+      .mockRejectedValueOnce({
+        code: "playback_source_unavailable",
+        message: "no playable source",
+        recoverable: true,
+      });
+    const playback = usePlaybackStore();
+
+    await playback.playItem("episode-1", { title: "Old", durationSeconds: 1200 });
+    playback.phase = "playing";
+    playback.positionSeconds = 120;
+    playback.seekReady = true;
+
+    const playPromise = playback.playItem("episode-2", { title: "New", durationSeconds: 1300 });
+
+    expect(playback.current?.itemId).toBe("episode-2");
+    expect(playback.mediaTitle).toBe("New");
+
+    await playPromise;
+
+    expect(playback.current?.itemId).toBe("episode-1");
+    expect(playback.mediaTitle).toBe("Old");
+    expect(playback.durationSeconds).toBe(1200);
+    expect(playback.positionSeconds).toBe(120);
+    expect(playback.seekReady).toBe(true);
+    expect(playback.phase).toBe("playing");
+    expect(playback.playbackVisible).toBe(true);
+    expect(playback.error?.message).toBe("no playable source");
   });
 
   it("带历史进度启动播放时记录待续播位置，等待媒体可用后跳转", async () => {
@@ -478,6 +656,64 @@ describe("playback store", () => {
     expect(playback.positionSeconds).toBe(3);
   });
 
+  it("enters playing when runtime is ready even if position remains zero", async () => {
+    const session = useSessionStore();
+    session.activeSession = {
+      server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+      account: { id: "user-1", serverId: "server-1", name: "alice" },
+      accessToken: "token-1",
+    };
+    vi.mocked(startPlayback).mockResolvedValue({
+      itemId: "item-1",
+      mediaSourceId: "source-1",
+      playMethod: "direct",
+    });
+    vi.mocked(getPlaybackStatus).mockResolvedValue({
+      coreReady: true,
+      mediaLoaded: true,
+      paused: false,
+      pausedForCache: false,
+      cacheSpeedBytesPerSecond: null,
+      positionSeconds: 0,
+    });
+    const playback = usePlaybackStore();
+
+    await playback.playItem("item-1");
+    await playback.refreshStatus();
+
+    expect(playback.phase).toBe("playing");
+    expect(playback.positionSeconds).toBe(0);
+  });
+
+  it("keeps loading when runtime is paused for cache at position zero", async () => {
+    const session = useSessionStore();
+    session.activeSession = {
+      server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+      account: { id: "user-1", serverId: "server-1", name: "alice" },
+      accessToken: "token-1",
+    };
+    vi.mocked(startPlayback).mockResolvedValue({
+      itemId: "item-1",
+      mediaSourceId: "source-1",
+      playMethod: "direct",
+    });
+    vi.mocked(getPlaybackStatus).mockResolvedValue({
+      coreReady: true,
+      mediaLoaded: true,
+      paused: false,
+      pausedForCache: true,
+      cacheSpeedBytesPerSecond: 1_572_864,
+      positionSeconds: 0,
+    });
+    const playback = usePlaybackStore();
+
+    await playback.playItem("item-1");
+    await playback.refreshStatus();
+
+    expect(playback.phase).toBe("loadingVideo");
+    expect(playback.loadingDetail).toBe("下行速度 1.5 MB/s");
+  });
+
   it("进入稳定播放后仅放大一次缓存配置", async () => {
     const session = useSessionStore();
     session.activeSession = {
@@ -834,6 +1070,91 @@ describe("playback store", () => {
     expect(playback.selectedSubtitleId).toBeNull();
   });
 
+  it("does not let a stale default subtitle selection write state after playback stops", async () => {
+    const session = useSessionStore();
+    session.activeSession = {
+      server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+      account: { id: "user-1", serverId: "server-1", name: "alice" },
+      accessToken: "token-1",
+    };
+    vi.mocked(startPlayback).mockResolvedValue({
+      itemId: "item-1",
+      mediaSourceId: "source-1",
+      playMethod: "direct",
+    });
+    const subtitleLoad = deferred<void>();
+    vi.mocked(loadSubtitle).mockReturnValue(subtitleLoad.promise);
+    vi.mocked(stopPlayback).mockResolvedValue(undefined);
+    const playback = usePlaybackStore();
+
+    const playPromise = playback.playItem("item-1", {
+      subtitles: [
+        { id: "zh", mediaSourceId: "source-1", streamIndex: 3, codec: "ass", language: "chi", label: "中文" },
+      ],
+      subtitleLanguages: ["zh-CN"],
+    });
+    await waitForMockCall(loadSubtitle, 1);
+
+    await playback.stop();
+    subtitleLoad.resolve();
+    await playPromise;
+
+    expect(playback.current).toBeNull();
+    expect(playback.subtitleTracks).toEqual([]);
+    expect(playback.selectedSubtitleId).toBeNull();
+    expect(playback.pendingSubtitleId).toBeNull();
+  });
+
+  it("does not let a stale default subtitle selection overwrite the next playback", async () => {
+    const session = useSessionStore();
+    session.activeSession = {
+      server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+      account: { id: "user-1", serverId: "server-1", name: "alice" },
+      accessToken: "token-1",
+    };
+    vi.mocked(startPlayback)
+      .mockResolvedValueOnce({
+        itemId: "item-1",
+        mediaSourceId: "source-1",
+        playMethod: "direct",
+      })
+      .mockResolvedValueOnce({
+        itemId: "item-2",
+        mediaSourceId: "source-2",
+        playMethod: "direct",
+      });
+    const firstSubtitleLoad = deferred<void>();
+    vi.mocked(loadSubtitle).mockReturnValueOnce(firstSubtitleLoad.promise).mockResolvedValueOnce(undefined);
+    const playback = usePlaybackStore();
+
+    const firstPlay = playback.playItem("item-1", {
+      subtitles: [
+        { id: "zh-old", mediaSourceId: "source-1", streamIndex: 3, codec: "ass", language: "chi", label: "旧字幕" },
+      ],
+      subtitleLanguages: ["zh-CN"],
+    });
+    await waitForMockCall(loadSubtitle, 1);
+
+    await playback.playItem("item-2", {
+      subtitles: [
+        { id: "zh-new", mediaSourceId: "source-2", streamIndex: 4, codec: "ass", language: "chi", label: "新字幕" },
+      ],
+      subtitleLanguages: ["zh-CN"],
+    });
+    expect(playback.current?.itemId).toBe("item-2");
+    expect(playback.subtitleTracks.map((track) => track.id)).toEqual(["zh-new"]);
+    expect(playback.selectedSubtitleId).toBe("zh-new");
+
+    firstSubtitleLoad.resolve();
+    await firstPlay;
+
+    expect(playback.current?.itemId).toBe("item-2");
+    expect(playback.current?.mediaSourceId).toBe("source-2");
+    expect(playback.subtitleTracks.map((track) => track.id)).toEqual(["zh-new"]);
+    expect(playback.selectedSubtitleId).toBe("zh-new");
+    expect(playback.pendingSubtitleId).toBeNull();
+  });
+
   it("播放时只暴露当前媒体源的字幕，并拒绝切换到其他媒体源字幕", async () => {
     const session = useSessionStore();
     session.activeSession = {
@@ -912,3 +1233,25 @@ describe("playback store", () => {
     expect(playback.cacheSizeLabel).toBe("0 KB");
   });
 });
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return { promise, resolve, reject };
+}
+
+async function waitForMockCall(mock: unknown, callCount: number) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    if (vi.mocked(mock as (...args: unknown[]) => unknown).mock.calls.length >= callCount) {
+      return;
+    }
+    await Promise.resolve();
+  }
+
+  expect(vi.mocked(mock as (...args: unknown[]) => unknown)).toHaveBeenCalledTimes(callCount);
+}

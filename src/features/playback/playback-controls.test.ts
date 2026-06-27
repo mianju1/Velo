@@ -4,6 +4,7 @@ import {
   formatPlaybackMinuteTime,
   formatPlaybackTime,
   keyboardShortcutAction,
+  shouldUsePlaybackLoadingBackdrop,
   shouldRenderPlaybackOverlay,
   isPointerInToolbarRevealZone,
   progressPercent,
@@ -12,6 +13,7 @@ import {
   RIGHT_ARROW_HOLD_SPEED_DELAY_MS,
   TOOLBAR_HIDE_DELAY_MS,
 } from "./playback-controls";
+import playbackControlsSource from "./PlaybackControls.vue?raw";
 
 describe("播放控制栏辅助逻辑", () => {
   it("格式化播放时间", () => {
@@ -71,12 +73,27 @@ describe("播放控制栏辅助逻辑", () => {
     expect(shouldRenderPlaybackOverlay(false)).toBe(false);
   });
 
+  it("uses a black backdrop only while the video is loading", () => {
+    expect(shouldUsePlaybackLoadingBackdrop("creatingKernel")).toBe(true);
+    expect(shouldUsePlaybackLoadingBackdrop("loadingVideo")).toBe(true);
+    expect(shouldUsePlaybackLoadingBackdrop("playing")).toBe(false);
+    expect(shouldUsePlaybackLoadingBackdrop("failed")).toBe(false);
+  });
+
+  it("defines an opaque black loading backdrop for the playback overlay", () => {
+    const loadingBackdropRule =
+      playbackControlsSource.match(/\.playback-overlay--loading\s*\{(?<body>[^}]+)\}/)?.groups?.body ?? "";
+
+    expect(loadingBackdropRule).toContain("background: #000");
+  });
+
   it("只有播放窗口可见且焦点不在输入控件时才响应快捷键", () => {
     expect(
       keyboardShortcutAction({
         key: " ",
         repeat: false,
         playbackVisible: false,
+        phase: "playing",
         targetEditable: false,
         fullscreen: false,
       }),
@@ -86,7 +103,21 @@ describe("播放控制栏辅助逻辑", () => {
         key: " ",
         repeat: false,
         playbackVisible: true,
+        phase: "playing",
         targetEditable: true,
+        fullscreen: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("does not run keyboard playback commands while the kernel is still starting", () => {
+    expect(
+      keyboardShortcutAction({
+        key: " ",
+        repeat: false,
+        playbackVisible: true,
+        phase: "creatingKernel",
+        targetEditable: false,
         fullscreen: false,
       }),
     ).toBeNull();
@@ -98,6 +129,7 @@ describe("播放控制栏辅助逻辑", () => {
         key: " ",
         repeat: false,
         playbackVisible: true,
+        phase: "playing",
         targetEditable: false,
         fullscreen: false,
       }),
@@ -108,6 +140,7 @@ describe("播放控制栏辅助逻辑", () => {
     const base = {
       repeat: false,
       playbackVisible: true,
+      phase: "playing" as const,
       targetEditable: false,
       fullscreen: true,
     };

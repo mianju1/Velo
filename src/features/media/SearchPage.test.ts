@@ -3,14 +3,16 @@ import { createPinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp, nextTick, type App } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
+import { useMediaStore } from "../../app/stores/media";
 import { useSessionStore } from "../../app/stores/session";
-import { searchMediaItems } from "../../services/emby/media";
+import { fetchLibraryViews, searchMediaItems } from "../../services/emby/media";
 import SearchPage from "./SearchPage.vue";
 
 vi.mock("../../services/emby/media", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../services/emby/media")>();
   return {
     ...actual,
+    fetchLibraryViews: vi.fn(),
     searchMediaItems: vi.fn(),
   };
 });
@@ -20,6 +22,9 @@ let app: App<Element> | null = null;
 describe("SearchPage", () => {
   beforeEach(() => {
     localStorage.clear();
+    vi.mocked(fetchLibraryViews).mockResolvedValue([
+      { id: "library-1", name: "Movies", type: "CollectionFolder", collectionType: "movies" },
+    ]);
     vi.mocked(searchMediaItems).mockResolvedValue({
       total: 1,
       rawItemCount: 1,
@@ -80,9 +85,22 @@ describe("SearchPage", () => {
 
     expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
   });
+
+  it("does not refetch sidebar library views when submitting global search", async () => {
+    const root = await mountSearchPage({ preloadViews: true });
+
+    const input = root.querySelector<HTMLInputElement>(".global-search-input")!;
+    input.value = "星际";
+    input.dispatchEvent(new Event("input"));
+    root.querySelector<HTMLButtonElement>(".global-search-submit")?.click();
+    await flush();
+
+    expect(searchMediaItems).toHaveBeenCalledTimes(1);
+    expect(fetchLibraryViews).not.toHaveBeenCalled();
+  });
 });
 
-async function mountSearchPage() {
+async function mountSearchPage(options: { preloadViews?: boolean } = {}) {
   const pinia = createPinia();
   const router = createRouter({
     history: createMemoryHistory(),
@@ -106,6 +124,10 @@ async function mountSearchPage() {
     account: { id: "user-1", serverId: "server-1", name: "alice" },
     accessToken: "token-1",
   };
+  if (options.preloadViews) {
+    await useMediaStore().loadViews();
+    vi.mocked(fetchLibraryViews).mockClear();
+  }
   app.mount(root);
   await flush();
 

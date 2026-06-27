@@ -13,6 +13,7 @@ import {
   KEYBOARD_SEEK_STEP_SECONDS,
   shouldHideToolbar,
   shouldRenderPlaybackOverlay,
+  shouldUsePlaybackLoadingBackdrop,
   TOOLBAR_HIDE_DELAY_MS,
 } from "./playback-controls";
 
@@ -30,10 +31,26 @@ const sliderValue = computed(() => playback.seekPreviewSeconds ?? playback.posit
 const progress = computed(() => progressPercent(sliderValue.value, playback.durationSeconds ?? 0));
 const hoverProgress = ref(0);
 const hoverPreviewSeconds = ref<number | null>(null);
+const rateMenuOpen = ref(false);
+const subtitleMenuOpen = ref(false);
 const elapsedLabel = computed(() => formatPlaybackTime(sliderValue.value));
 const durationLabel = computed(() =>
   playback.durationSeconds === null ? "--:--" : formatPlaybackTime(playback.durationSeconds),
 );
+const canChangeRate = computed(() => canControlPlayback.value);
+const canChangeSubtitle = computed(() => canControlPlayback.value && playback.pendingSubtitleId === null);
+const toolbarInteractionActive = computed(
+  () => pointerInsideToolbar.value || episodeMenuOpen.value || rateMenuOpen.value || subtitleMenuOpen.value,
+);
+const currentRateLabel = computed(() => formatRate(playback.rate));
+const currentSubtitleValue = computed(() => playback.pendingSubtitleId ?? playback.selectedSubtitleId ?? "off");
+const currentSubtitleLabel = computed(() => {
+  if (currentSubtitleValue.value === "off") {
+    return "关闭";
+  }
+
+  return playback.subtitleTracks.find((track) => track.id === currentSubtitleValue.value)?.label ?? "字幕";
+});
 const hoverPreviewLabel = computed(() => {
   if (hoverPreviewSeconds.value === null || playback.durationSeconds === null) {
     return "";
@@ -87,11 +104,17 @@ watch(
       clearRightArrowHold(false);
       clearShortcutFeedback();
       episodeMenuOpen.value = false;
+      rateMenuOpen.value = false;
+      subtitleMenuOpen.value = false;
     }
   },
 );
 
 function togglePaused() {
+  if (!canControlPlayback.value) {
+    return;
+  }
+
   if (playback.paused) {
     void playback.resume();
     return;
@@ -169,31 +192,73 @@ function timelinePointerRatio(event: PointerEvent) {
   return rect.width <= 0 ? 0 : Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
 }
 
-function onRateChange(event: Event) {
-  void playback.setRate(Number((event.target as HTMLSelectElement).value));
-}
-
-function onSubtitleChange(event: Event) {
-  const value = (event.target as HTMLSelectElement).value;
-  focusPlaybackOverlay();
-  void playback.selectSubtitle(value === "off" ? null : value);
-}
-
 function onVolumeInput(event: Event) {
+  if (!canControlPlayback.value) {
+    return;
+  }
+
   void playback.setVolume(Number((event.target as HTMLInputElement).value));
 }
 
 function toggleMuted() {
+  if (!canControlPlayback.value) {
+    return;
+  }
+
   void playback.setMuted(!playback.muted);
 }
 
 function toggleEpisodeMenu() {
+  rateMenuOpen.value = false;
+  subtitleMenuOpen.value = false;
   episodeMenuOpen.value = !episodeMenuOpen.value;
 }
 
 function playEpisode(itemId: string) {
   episodeMenuOpen.value = false;
   void playback.playEpisode(itemId);
+}
+
+function toggleRateMenu() {
+  if (!canChangeRate.value) {
+    return;
+  }
+
+  episodeMenuOpen.value = false;
+  subtitleMenuOpen.value = false;
+  rateMenuOpen.value = !rateMenuOpen.value;
+  showToolbar();
+}
+
+function selectRate(option: number) {
+  if (!canChangeRate.value) {
+    return;
+  }
+
+  rateMenuOpen.value = false;
+  focusPlaybackOverlay();
+  void playback.setRate(option);
+}
+
+function toggleSubtitleMenu() {
+  if (!canChangeSubtitle.value) {
+    return;
+  }
+
+  episodeMenuOpen.value = false;
+  rateMenuOpen.value = false;
+  subtitleMenuOpen.value = !subtitleMenuOpen.value;
+  showToolbar();
+}
+
+function selectSubtitleOption(value: string) {
+  if (!canChangeSubtitle.value) {
+    return;
+  }
+
+  subtitleMenuOpen.value = false;
+  focusPlaybackOverlay();
+  void playback.selectSubtitle(value === "off" ? null : value);
 }
 
 function onWindowPointerMove(event: PointerEvent) {
@@ -238,12 +303,12 @@ function onToolbarPointerLeave() {
 
 function scheduleToolbarHide() {
   clearHideTimer();
-  if (!shouldHideToolbar(canAutoHide.value, pointerInsideToolbar.value)) {
+  if (!shouldHideToolbar(canAutoHide.value, toolbarInteractionActive.value)) {
     return;
   }
 
   hideTimer = setTimeout(() => {
-    if (shouldHideToolbar(canAutoHide.value, pointerInsideToolbar.value)) {
+    if (shouldHideToolbar(canAutoHide.value, toolbarInteractionActive.value)) {
       toolbarHidden.value = true;
     }
   }, TOOLBAR_HIDE_DELAY_MS);
@@ -258,10 +323,26 @@ function clearHideTimer() {
   hideTimer = null;
 }
 
-function focusPlaybackOverlay() {
+function focusPlaybackOverlay(event?: Event) {
+  if (event && shouldKeepFocusOnToolbarTarget(event.target)) {
+    return;
+  }
+
   void nextTick(() => {
     playbackOverlay.value?.focus({ preventScroll: true });
   });
+}
+
+function shouldKeepFocusOnToolbarTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return Boolean(
+    target.closest(
+      ".playback-controls button, .playback-controls input, .playback-controls select, .playback-controls [role='option']",
+    ),
+  );
 }
 
 function onWindowKeyDown(event: KeyboardEvent) {
@@ -269,6 +350,7 @@ function onWindowKeyDown(event: KeyboardEvent) {
     key: event.key,
     repeat: event.repeat,
     playbackVisible: playback.playbackVisible,
+    phase: playback.phase,
     targetEditable: isEditableShortcutTarget(event.target),
     fullscreen: playback.fullscreen,
   });
@@ -281,7 +363,7 @@ function onWindowKeyDown(event: KeyboardEvent) {
 }
 
 function onWindowKeyUp(event: KeyboardEvent) {
-  if (!playback.playbackVisible || event.key !== "ArrowRight") {
+  if (!playback.playbackVisible || !canControlPlayback.value || event.key !== "ArrowRight") {
     return;
   }
 
@@ -304,7 +386,7 @@ function onWindowKeyUp(event: KeyboardEvent) {
 }
 
 function runShortcutAction(action: ReturnType<typeof keyboardShortcutAction>) {
-  if (!action) {
+  if (!action || !canControlPlayback.value) {
     return;
   }
 
@@ -403,6 +485,7 @@ function formatRate(value: number) {
     v-if="shouldRenderPlaybackOverlay(playback.playbackVisible)"
     ref="playbackOverlay"
     class="playback-overlay"
+    :class="{ 'playback-overlay--loading': shouldUsePlaybackLoadingBackdrop(playback.phase) }"
     tabindex="-1"
     @pointerdown.capture="focusPlaybackOverlay"
     @pointermove="onWindowPointerMove"
@@ -414,7 +497,7 @@ function formatRate(value: number) {
       type="button"
       class="icon-button stop-button"
       :class="{ 'stop-button--hidden': toolbarHidden }"
-      :disabled="playback.phase === 'failed'"
+      :disabled="playback.phase === 'failed' || playback.phase === 'stopping'"
       aria-label="停止"
       data-tooltip="停止"
       @click="playback.stop"
@@ -475,7 +558,7 @@ function formatRate(value: number) {
           <button
             type="button"
             class="icon-button control-button"
-            :disabled="playback.phase === 'failed'"
+            :disabled="!canControlPlayback"
             aria-label="播放/暂停"
             :data-tooltip="playback.paused ? '播放' : '暂停'"
             @click="togglePaused"
@@ -491,7 +574,7 @@ function formatRate(value: number) {
             <button
               type="button"
               class="icon-button control-button"
-              :disabled="playback.phase === 'failed'"
+              :disabled="!canControlPlayback"
               aria-label="静音/取消静音"
               data-tooltip="静音/取消静音"
               @click="toggleMuted"
@@ -518,7 +601,7 @@ function formatRate(value: number) {
                 max="100"
                 step="1"
                 :value="playback.volume"
-                :disabled="playback.phase === 'failed'"
+                :disabled="!canControlPlayback"
                 aria-label="音量"
                 @input="onVolumeInput"
               />
@@ -560,7 +643,7 @@ function formatRate(value: number) {
           <button
             type="button"
             class="icon-button control-button"
-            :disabled="!playback.hasPreviousEpisode"
+            :disabled="!playback.hasPreviousEpisode || !canControlPlayback"
             aria-label="上一集"
             data-tooltip="上一集"
             @click="playback.playPreviousEpisode"
@@ -573,7 +656,7 @@ function formatRate(value: number) {
           <button
             type="button"
             class="icon-button control-button"
-            :disabled="!playback.hasNextEpisode"
+            :disabled="!playback.hasNextEpisode || !canControlPlayback"
             aria-label="下一集"
             data-tooltip="下一集"
             @click="playback.playNextEpisode"
@@ -587,7 +670,7 @@ function formatRate(value: number) {
             <button
               type="button"
               class="icon-button control-button"
-              :disabled="playback.episodes.length === 0"
+              :disabled="playback.episodes.length === 0 || !canControlPlayback"
               aria-label="选集"
               data-tooltip="选集"
               @click="toggleEpisodeMenu"
@@ -613,33 +696,78 @@ function formatRate(value: number) {
             </div>
           </div>
 
-          <label class="compact-field">
-            倍速
-            <select :value="playback.rate" :disabled="playback.phase === 'failed'" @change="onRateChange">
-              <option v-for="option in rateOptions" :key="option" :value="option">
-                {{ option }}x
-              </option>
-            </select>
-          </label>
-
-          <label class="compact-field subtitle-field">
-            字幕
-            <select
-              :value="playback.pendingSubtitleId ?? playback.selectedSubtitleId ?? 'off'"
-              :disabled="playback.phase === 'failed' || playback.pendingSubtitleId !== null"
-              @change="onSubtitleChange"
+          <div class="compact-field field-picker rate-picker">
+            <span>倍速</span>
+            <button
+              type="button"
+              class="field-picker-button"
+              :disabled="!canChangeRate"
+              aria-haspopup="listbox"
+              :aria-expanded="rateMenuOpen"
+              aria-label="倍速"
+              @click="toggleRateMenu"
             >
-              <option value="off">关闭</option>
-              <option v-for="track in playback.subtitleTracks" :key="track.id" :value="track.id">
+              {{ currentRateLabel }}
+            </button>
+            <div v-if="rateMenuOpen" class="field-picker-menu" role="listbox" aria-label="倍速选项">
+              <button
+                v-for="option in rateOptions"
+                :key="option"
+                type="button"
+                class="field-picker-option"
+                :class="{ 'field-picker-option--active': option === playback.rate }"
+                role="option"
+                :aria-selected="option === playback.rate"
+                @click="selectRate(option)"
+              >
+                {{ formatRate(option) }}
+              </button>
+            </div>
+          </div>
+
+          <div class="compact-field field-picker subtitle-field subtitle-picker">
+            <span>字幕</span>
+            <button
+              type="button"
+              class="field-picker-button"
+              :disabled="!canChangeSubtitle"
+              aria-haspopup="listbox"
+              :aria-expanded="subtitleMenuOpen"
+              aria-label="字幕"
+              @click="toggleSubtitleMenu"
+            >
+              {{ currentSubtitleLabel }}
+            </button>
+            <div v-if="subtitleMenuOpen" class="field-picker-menu subtitle-menu" role="listbox" aria-label="字幕选项">
+              <button
+                type="button"
+                class="field-picker-option"
+                :class="{ 'field-picker-option--active': currentSubtitleValue === 'off' }"
+                role="option"
+                :aria-selected="currentSubtitleValue === 'off'"
+                @click="selectSubtitleOption('off')"
+              >
+                关闭
+              </button>
+              <button
+                v-for="track in playback.subtitleTracks"
+                :key="track.id"
+                type="button"
+                class="field-picker-option"
+                :class="{ 'field-picker-option--active': track.id === currentSubtitleValue }"
+                role="option"
+                :aria-selected="track.id === currentSubtitleValue"
+                @click="selectSubtitleOption(track.id)"
+              >
                 {{ track.label }}
-              </option>
-            </select>
-          </label>
+              </button>
+            </div>
+          </div>
 
           <button
             type="button"
             class="icon-button control-button"
-            :disabled="playback.phase === 'failed'"
+            :disabled="!canControlPlayback"
             aria-label="全屏"
             :data-tooltip="playback.fullscreen ? '退出全屏' : '全屏'"
             @click="playback.setFullscreen(!playback.fullscreen)"
@@ -662,6 +790,10 @@ function formatRate(value: number) {
   background: transparent;
   outline: none;
   pointer-events: auto;
+}
+
+.playback-overlay--loading {
+  background: #000;
 }
 
 .playback-controls {
@@ -919,17 +1051,69 @@ function formatRate(value: number) {
   font-size: 13px;
 }
 
-.compact-field select {
+.field-picker {
+  position: relative;
+}
+
+.field-picker-button {
   width: 78px;
   min-height: 32px;
   border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 4px;
+  padding: 0 9px;
   color: #ffffff;
   background: rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
 }
 
-.subtitle-field select {
+.field-picker-button:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+.field-picker-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 6;
+  display: grid;
+  gap: 4px;
+  min-width: 112px;
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  padding: 6px;
+  background: rgba(0, 0, 0, 0.88);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
+}
+
+.field-picker-option {
+  border: 0;
+  border-radius: 4px;
+  padding: 7px 9px;
+  color: #ffffff;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.field-picker-option:hover,
+.field-picker-option:focus-visible,
+.field-picker-option--active {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.subtitle-field .field-picker-button {
   width: min(190px, 28vw);
+}
+
+.subtitle-menu {
+  min-width: min(220px, 58vw);
 }
 
 .volume-field input {
@@ -1035,7 +1219,7 @@ function formatRate(value: number) {
   }
 
   .compact-field,
-  .compact-field select,
+  .field-picker-button,
   .volume-field input {
     width: 100%;
   }

@@ -61,6 +61,16 @@ describe("媒体列表布局样式", () => {
     expect(closeRule).toContain("right: 14px");
   });
 
+  it("关于页图标和版本内容在面板中居中显示", () => {
+    const aboutRule = appSource.match(/\.settings-about\s*\{(?<body>[^}]+)\}/)?.groups?.body ?? "";
+    const versionRule = appSource.match(/\.settings-about-version\s*\{(?<body>[^}]+)\}/)?.groups?.body ?? "";
+
+    expect(aboutRule).toContain("place-content: center");
+    expect(aboutRule).toContain("justify-items: center");
+    expect(aboutRule).toContain("text-align: center");
+    expect(versionRule).toContain("display: inline-flex");
+  });
+
   it("白色主题下侧边栏滚动条使用浅色主题样式，避免滚动时出现黑柱", () => {
     const lightThemeRule = appSource.match(/:root\[data-theme="light"\]\s*\{(?<body>[^}]+)\}/)?.groups?.body ?? "";
     const sidebarRule = appSource.match(/\.media-sidebar\s*\{(?<body>[^}]+)\}/)?.groups?.body ?? "";
