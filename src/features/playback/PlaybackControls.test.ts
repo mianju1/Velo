@@ -67,6 +67,56 @@ describe("PlaybackControls", () => {
     expect(pausePlayback).toHaveBeenCalled();
   });
 
+  it("uses a black overlay backdrop while loading and removes it when video is playing", async () => {
+    const pinia = createPinia();
+    const root = document.createElement("div");
+    document.body.append(root);
+    app = createApp(PlaybackControls);
+    app.use(pinia);
+    app.mount(root);
+
+    const playback = usePlaybackStore(pinia);
+    playback.current = {
+      itemId: "item-1",
+      mediaSourceId: "source-1",
+      playMethod: "direct",
+    };
+    playback.phase = "loadingVideo";
+    await nextTick();
+
+    const overlay = root.querySelector<HTMLElement>(".playback-overlay");
+    expect(overlay).not.toBeNull();
+    expect(overlay?.classList.contains("playback-overlay--loading")).toBe(true);
+
+    playback.phase = "playing";
+    await nextTick();
+
+    expect(overlay?.classList.contains("playback-overlay--loading")).toBe(false);
+  });
+
+  it("removes the black loading backdrop once the video surface is seek ready", async () => {
+    const pinia = createPinia();
+    const root = document.createElement("div");
+    document.body.append(root);
+    app = createApp(PlaybackControls);
+    app.use(pinia);
+    app.mount(root);
+
+    const playback = usePlaybackStore(pinia);
+    playback.current = {
+      itemId: "item-1",
+      mediaSourceId: "source-1",
+      playMethod: "direct",
+    };
+    playback.phase = "loadingVideo";
+    playback.seekReady = true;
+    await nextTick();
+
+    const overlay = root.querySelector<HTMLElement>(".playback-overlay");
+    expect(overlay).not.toBeNull();
+    expect(overlay?.classList.contains("playback-overlay--loading")).toBe(false);
+  });
+
   it("工具栏隐藏后鼠标移到顶部边缘会显示，并在离开工具栏时继续自动隐藏", async () => {
     vi.useFakeTimers();
     const pinia = createPinia();

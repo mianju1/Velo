@@ -13,6 +13,7 @@ import {
   KEYBOARD_SEEK_STEP_SECONDS,
   shouldHideToolbar,
   shouldRenderPlaybackOverlay,
+  shouldUsePlaybackLoadingBackdrop,
   TOOLBAR_HIDE_DELAY_MS,
 } from "./playback-controls";
 
@@ -403,6 +404,7 @@ function formatRate(value: number) {
     v-if="shouldRenderPlaybackOverlay(playback.playbackVisible)"
     ref="playbackOverlay"
     class="playback-overlay"
+    :class="{ 'playback-overlay--loading': shouldUsePlaybackLoadingBackdrop(playback.phase, playback.seekReady) }"
     tabindex="-1"
     @pointerdown.capture="focusPlaybackOverlay"
     @pointermove="onWindowPointerMove"
@@ -662,6 +664,10 @@ function formatRate(value: number) {
   background: transparent;
   outline: none;
   pointer-events: auto;
+}
+
+.playback-overlay--loading {
+  background: #000;
 }
 
 .playback-controls {

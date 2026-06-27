@@ -91,6 +91,14 @@ export function shouldRenderPlaybackOverlay(playbackVisible: boolean) {
   return playbackVisible;
 }
 
+export function shouldUsePlaybackLoadingBackdrop(phase: PlaybackControlPhase, seekReady: boolean) {
+  if (phase === "creatingKernel") {
+    return true;
+  }
+
+  return phase === "loadingVideo" && !seekReady;
+}
+
 export function keyboardShortcutAction(context: PlaybackShortcutContext): PlaybackShortcutAction | null {
   if (!context.playbackVisible || context.targetEditable) {
     return null;
