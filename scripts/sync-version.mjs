@@ -59,7 +59,7 @@ function replaceTomlPackageVersion(content, path, version) {
   const updatedLines = lines.map((line) => {
     const lineEnding = line.match(/(\r\n|\n|\r)$/)?.[1] ?? "";
     const body = line.slice(0, line.length - lineEnding.length);
-    const tableName = body.match(/^\s*\[([^\]]+)\]\s*(?:#.*)?$/)?.[1];
+    const tableName = body.match(/^\s*\[+([^\]]+)\]+\s*(?:#.*)?$/)?.[1];
 
     if (tableName) {
       inPackage = tableName === "package";

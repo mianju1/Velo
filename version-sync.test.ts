@@ -263,7 +263,10 @@ describe("version sync config", () => {
 
     try {
       writeFixture(fixtureRoot);
-      writeFileSync(join(fixtureRoot, "Cargo.toml"), `[package]\nname = "velo-fixture"\n`);
+      writeFileSync(
+        join(fixtureRoot, "Cargo.toml"),
+        `[package]\nname = "velo-fixture"\n\n[[bin]]\nname = "velo-fixture"\nversion = "do-not-touch"\n`,
+      );
       const before = {
         version: readFileSync(join(fixtureRoot, "VERSION"), "utf8"),
         packageJson: readFileSync(join(fixtureRoot, "package.json"), "utf8"),
