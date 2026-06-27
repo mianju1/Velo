@@ -22,22 +22,37 @@ jobs:
           persist-credentials: false
 
       - name: Configure Codex provider
+        env:
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
         run: |
           mkdir -p "$GITHUB_WORKSPACE/.codex-home"
-          cat > "$GITHUB_WORKSPACE/.codex-home/config.toml" <<'EOF'
+          cat > "$GITHUB_WORKSPACE/.codex-home/config.toml" <<EOF
           model = "codex-auto-review"
-          openai_base_url = "${{ secrets.OPENAI_BASE_URL }}"
+          model_provider = "third_party"
+
+          [model_providers.third_party]
+          name = "Third party OpenAI-compatible provider"
+          base_url = "$OPENAI_BASE_URL"
+          env_key = "OPENAI_API_KEY"
           EOF
+
+      - name: Install Codex CLI
+        run: |
+          npm install -g @openai/codex
+          codex --version
 
       - name: Run Codex review
         id: codex
-        uses: openai/codex-action@v1
-        with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          prompt-file: .github/codex/prompts/review.md
-          output-file: codex-review.md
-          sandbox: read-only
-          codex-home: ${{ github.workspace }}/.codex-home
+        env:
+          CODEX_HOME: ${{ github.workspace }}/.codex-home
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          codex exec --ephemeral --sandbox read-only --model codex-auto-review -o codex-review.md "$(cat .github/codex/prompts/review.md)"
+          {
+            echo 'final-message<<EOF'
+            cat codex-review.md
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Post Codex review comment
         if: steps.codex.outputs.final-message != ''
