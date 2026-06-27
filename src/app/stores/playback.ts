@@ -191,6 +191,7 @@ export const usePlaybackStore = defineStore("playback", () => {
 
       startStatusPolling();
       await trySelectDefaultSubtitle({
+        generation: startGeneration,
         serverUrl: session.server.url,
         token: session.accessToken,
         itemId,
@@ -212,7 +213,7 @@ export const usePlaybackStore = defineStore("playback", () => {
       }
 
       const appError = toAppError(caught);
-      if (previousPlayback && appError.code === "playback_source_unavailable") {
+      if (previousPlayback) {
         restorePlaybackSnapshot(previousPlayback);
         error.value = appError;
         startStatusPolling();
@@ -694,6 +695,7 @@ export const usePlaybackStore = defineStore("playback", () => {
   }
 
   async function trySelectDefaultSubtitle(options: {
+    generation: number;
     serverUrl: string;
     token: string;
     itemId: string;
@@ -701,23 +703,46 @@ export const usePlaybackStore = defineStore("playback", () => {
     tracks: MediaSubtitleTrack[];
     languages: readonly string[];
   }) {
-    subtitleTracks.value = options.tracks.filter((track) => track.mediaSourceId === options.mediaSourceId);
-    const preferred = selectPreferredSubtitleTrack(subtitleTracks.value, options.languages);
+    if (!isCurrentDefaultSubtitleTarget(options.generation, options.mediaSourceId)) {
+      return;
+    }
+
+    const tracks = options.tracks.filter((track) => track.mediaSourceId === options.mediaSourceId);
+    subtitleTracks.value = tracks;
+    const preferred = selectPreferredSubtitleTrack(tracks, options.languages);
 
     if (!preferred) {
-      selectedSubtitleId.value = null;
+      if (isCurrentDefaultSubtitleTarget(options.generation, options.mediaSourceId)) {
+        selectedSubtitleId.value = null;
+      }
       return;
     }
 
     try {
+      if (!isCurrentDefaultSubtitleTarget(options.generation, options.mediaSourceId)) {
+        return;
+      }
+
       await applySubtitleTrack(options.itemId, options.serverUrl, options.token, preferred);
+      if (!isCurrentDefaultSubtitleTarget(options.generation, options.mediaSourceId)) {
+        return;
+      }
+
       selectedSubtitleId.value = preferred.id;
     } catch {
       // 默认字幕加载失败不应打断已经启动的视频播放，用户仍可稍后手动选择字幕。
-      selectedSubtitleId.value = null;
+      if (isCurrentDefaultSubtitleTarget(options.generation, options.mediaSourceId)) {
+        selectedSubtitleId.value = null;
+      }
     } finally {
-      pendingSubtitleId.value = null;
+      if (isCurrentDefaultSubtitleTarget(options.generation, options.mediaSourceId)) {
+        pendingSubtitleId.value = null;
+      }
     }
+  }
+
+  function isCurrentDefaultSubtitleTarget(generation: number, mediaSourceId: string) {
+    return generation === playbackStartGeneration && current.value?.mediaSourceId === mediaSourceId;
   }
 
   function applyRuntimeStatus(status: PlaybackRuntimeStatus) {
