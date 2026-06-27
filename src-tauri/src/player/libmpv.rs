@@ -87,7 +87,7 @@ const GL_RGBA8: c_int = 0x8058;
 const MPV_RENDER_API_TYPE_OPENGL: &[u8] = b"opengl\0";
 #[cfg(target_os = "macos")]
 const RENDER_WATCHDOG_TICKS: u32 = 30;
-const STARTUP_CACHE_SECONDS: u32 = 15;
+const STARTUP_CACHE_SECONDS: u32 = 5;
 const STEADY_CACHE_SECONDS: u32 = 30;
 
 #[cfg(target_os = "macos")]
@@ -1439,7 +1439,7 @@ mod tests {
     }
 
     #[test]
-    fn libmpv_disk_cache_options_limit_readahead_to_15_seconds() {
+    fn libmpv_disk_cache_options_limit_startup_readahead_to_5_seconds() {
         let options = libmpv_disk_cache_options_for_dir(&PathBuf::from("/tmp/emby-cache"));
 
         assert!(options.contains(&("cache".into(), "yes".into())));
@@ -1465,7 +1465,7 @@ mod tests {
             crate::player::backend::PlaybackBufferProfile::Steady => STEADY_CACHE_SECONDS,
         };
 
-        assert_eq!(startup, 15);
+        assert_eq!(startup, 5);
         assert_eq!(steady, 30);
     }
 

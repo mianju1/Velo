@@ -650,7 +650,7 @@ export const usePlaybackStore = defineStore("playback", () => {
       return;
     }
 
-    if (!status.mediaLoaded || status.pausedForCache || positionSeconds.value === 0) {
+    if (!status.mediaLoaded || status.pausedForCache) {
       phase.value = "loadingVideo";
       loadingDetail.value = formatLoadingDetail(status.cacheSpeedBytesPerSecond);
       return;
