@@ -131,7 +131,56 @@ describe("version sync config", () => {
       expect(result.stderr).toContain("Invalid version");
       expect(readFileSync(join(fixtureRoot, "VERSION"), "utf8")).toBe("0.1.0\n");
       expect(readJson<PackageJson>(join(fixtureRoot, "package.json")).version).toBe("0.1.0");
+      const packageLock = readJson<PackageLock>(join(fixtureRoot, "package-lock.json"));
+      expect(packageLock.version).toBe("0.1.0");
+      expect(packageLock.packages[""].version).toBe("0.1.0");
       expect(readCargoVersion(join(fixtureRoot, "Cargo.toml"))).toBe("0.1.0");
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("sync script enforces strict semver without numeric leading zeros", () => {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), "velo-version-sync-"));
+
+    try {
+      writeFixture(fixtureRoot);
+
+      for (const version of ["01.2.3", "1.02.3", "1.2.03", "1.2.3-01"]) {
+        const result = spawnSync(process.execPath, [scriptPath, version], {
+          cwd: fixtureRoot,
+          encoding: "utf8",
+        });
+
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain("Invalid version");
+      }
+
+      expect(readFileSync(join(fixtureRoot, "VERSION"), "utf8")).toBe("0.1.0\n");
+      expect(readJson<PackageJson>(join(fixtureRoot, "package.json")).version).toBe("0.1.0");
+      expect(readCargoVersion(join(fixtureRoot, "Cargo.toml"))).toBe("0.1.0");
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("sync script accepts prerelease and build semver metadata", () => {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), "velo-version-sync-"));
+
+    try {
+      writeFixture(fixtureRoot);
+
+      const result = spawnSync(process.execPath, [scriptPath, "1.2.3-beta.1+build.1"], {
+        cwd: fixtureRoot,
+        encoding: "utf8",
+      });
+
+      expect(result.status).toBe(0);
+      expect(readFileSync(join(fixtureRoot, "VERSION"), "utf8")).toBe("1.2.3-beta.1+build.1\n");
+      expect(readJson<PackageJson>(join(fixtureRoot, "package.json")).version).toBe(
+        "1.2.3-beta.1+build.1",
+      );
+      expect(readCargoVersion(join(fixtureRoot, "Cargo.toml"))).toBe("1.2.3-beta.1+build.1");
     } finally {
       rmSync(fixtureRoot, { recursive: true, force: true });
     }
