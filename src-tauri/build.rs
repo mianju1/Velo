@@ -8,10 +8,21 @@ fn main() {
 fn verify_package_version_matches_cargo() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
     let package_json_path = Path::new(&manifest_dir).join("../package.json");
+    let version_path = Path::new(&manifest_dir).join("../VERSION");
 
     println!("cargo:rerun-if-changed={}", package_json_path.display());
+    println!("cargo:rerun-if-changed={}", version_path.display());
     println!("cargo:rerun-if-changed=Cargo.toml");
 
+    let source_version = fs::read_to_string(&version_path)
+        .unwrap_or_else(|error| {
+            panic!(
+                "failed to read root VERSION at {}: {error}",
+                version_path.display()
+            )
+        })
+        .trim()
+        .to_owned();
     let package_json = fs::read_to_string(&package_json_path).unwrap_or_else(|error| {
         panic!(
             "failed to read root package.json at {}: {error}",
@@ -28,6 +39,12 @@ fn verify_package_version_matches_cargo() {
             )
         });
     let cargo_version = env!("CARGO_PKG_VERSION");
+
+    if source_version != package_version {
+        panic!(
+            "version mismatch: VERSION has {source_version}, but package.json has {package_version}"
+        );
+    }
 
     if package_version != cargo_version {
         panic!(

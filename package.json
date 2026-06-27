@@ -8,6 +8,7 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest",
+    "version:set": "node scripts/sync-version.mjs",
     "prepare:libmpv": "./scripts/prepare-libmpv-runtime.sh",
     "prepare:libmpv:sonoma": "./scripts/prepare-macos-sonoma-libmpv-runtime.sh",
     "prepare:windows-mpv": "./scripts/prepare-windows-mpv-runtime.sh",
