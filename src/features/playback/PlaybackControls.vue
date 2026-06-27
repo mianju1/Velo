@@ -404,7 +404,7 @@ function formatRate(value: number) {
     v-if="shouldRenderPlaybackOverlay(playback.playbackVisible)"
     ref="playbackOverlay"
     class="playback-overlay"
-    :class="{ 'playback-overlay--loading': shouldUsePlaybackLoadingBackdrop(playback.phase, playback.seekReady) }"
+    :class="{ 'playback-overlay--loading': shouldUsePlaybackLoadingBackdrop(playback.phase) }"
     tabindex="-1"
     @pointerdown.capture="focusPlaybackOverlay"
     @pointermove="onWindowPointerMove"

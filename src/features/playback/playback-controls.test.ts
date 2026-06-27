@@ -74,11 +74,10 @@ describe("播放控制栏辅助逻辑", () => {
   });
 
   it("uses a black backdrop only while the video is loading", () => {
-    expect(shouldUsePlaybackLoadingBackdrop("creatingKernel", false)).toBe(true);
-    expect(shouldUsePlaybackLoadingBackdrop("loadingVideo", false)).toBe(true);
-    expect(shouldUsePlaybackLoadingBackdrop("loadingVideo", true)).toBe(false);
-    expect(shouldUsePlaybackLoadingBackdrop("playing", true)).toBe(false);
-    expect(shouldUsePlaybackLoadingBackdrop("failed", false)).toBe(false);
+    expect(shouldUsePlaybackLoadingBackdrop("creatingKernel")).toBe(true);
+    expect(shouldUsePlaybackLoadingBackdrop("loadingVideo")).toBe(true);
+    expect(shouldUsePlaybackLoadingBackdrop("playing")).toBe(false);
+    expect(shouldUsePlaybackLoadingBackdrop("failed")).toBe(false);
   });
 
   it("defines an opaque black loading backdrop for the playback overlay", () => {

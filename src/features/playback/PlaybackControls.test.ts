@@ -94,7 +94,7 @@ describe("PlaybackControls", () => {
     expect(overlay?.classList.contains("playback-overlay--loading")).toBe(false);
   });
 
-  it("removes the black loading backdrop once the video surface is seek ready", async () => {
+  it("keeps the black loading backdrop while loading even when the timeline becomes seek ready", async () => {
     const pinia = createPinia();
     const root = document.createElement("div");
     document.body.append(root);
@@ -114,7 +114,7 @@ describe("PlaybackControls", () => {
 
     const overlay = root.querySelector<HTMLElement>(".playback-overlay");
     expect(overlay).not.toBeNull();
-    expect(overlay?.classList.contains("playback-overlay--loading")).toBe(false);
+    expect(overlay?.classList.contains("playback-overlay--loading")).toBe(true);
   });
 
   it("工具栏隐藏后鼠标移到顶部边缘会显示，并在离开工具栏时继续自动隐藏", async () => {
