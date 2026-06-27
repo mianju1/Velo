@@ -13,6 +13,7 @@ import {
   selectEmbeddedSubtitle,
   setPlaybackBufferProfile,
   setPlaybackRate,
+  type StartPlaybackResult,
   startPlayback,
   stopPlayback,
 } from "../../services/playback/playback";
@@ -75,6 +76,145 @@ describe("playback store", () => {
     expect(playback.playbackVisible).toBe(true);
     expect(playback.phase).toBe("loadingVideo");
     expect(playback.loading).toBe(false);
+  });
+
+  it("shows the playback loading view before startPlayback resolves", async () => {
+    const session = useSessionStore();
+    session.activeSession = {
+      server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+      account: { id: "user-1", serverId: "server-1", name: "alice" },
+      accessToken: "token-1",
+    };
+    const startup = deferred<StartPlaybackResult>();
+    vi.mocked(startPlayback).mockReturnValue(startup.promise);
+    const playback = usePlaybackStore();
+
+    const playPromise = playback.playItem("item-1", { durationSeconds: 5400, title: "Pilot" });
+
+    expect(playback.current?.itemId).toBe("item-1");
+    expect(playback.playbackVisible).toBe(true);
+    expect(playback.loading).toBe(true);
+    expect(playback.phase).toBe("creatingKernel");
+    expect(playback.mediaTitle).toBe("Pilot");
+    expect(playback.durationSeconds).toBe(5400);
+
+    startup.resolve({ itemId: "item-1", mediaSourceId: "source-1", playMethod: "direct" });
+    await playPromise;
+
+    expect(playback.current?.mediaSourceId).toBe("source-1");
+    expect(playback.loading).toBe(false);
+  });
+
+  it("exits the optimistic playback view when first startup fails", async () => {
+    const session = useSessionStore();
+    session.activeSession = {
+      server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+      account: { id: "user-1", serverId: "server-1", name: "alice" },
+      accessToken: "token-1",
+    };
+    const startup = deferred<StartPlaybackResult>();
+    vi.mocked(startPlayback).mockReturnValue(startup.promise);
+    const playback = usePlaybackStore();
+
+    const playPromise = playback.playItem("item-1", { durationSeconds: 5400, title: "Pilot" });
+    expect(playback.playbackVisible).toBe(true);
+
+    startup.reject({ code: "playback_source_unavailable", message: "no playable source", recoverable: true });
+    await playPromise;
+
+    expect(playback.current).toBeNull();
+    expect(playback.playbackVisible).toBe(false);
+    expect(playback.phase).toBe("failed");
+    expect(playback.loading).toBe(false);
+    expect(playback.error?.message).toBe("no playable source");
+  });
+
+  it("stops backend playback after a pending startup resolves when stop is requested first", async () => {
+    const session = useSessionStore();
+    session.activeSession = {
+      server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+      account: { id: "user-1", serverId: "server-1", name: "alice" },
+      accessToken: "token-1",
+    };
+    const startup = deferred<StartPlaybackResult>();
+    vi.mocked(startPlayback).mockReturnValue(startup.promise);
+    vi.mocked(stopPlayback).mockResolvedValue(undefined);
+    const playback = usePlaybackStore();
+
+    const playPromise = playback.playItem("item-1", { durationSeconds: 5400, title: "Pilot" });
+    await playback.stop();
+
+    expect(stopPlayback).not.toHaveBeenCalled();
+    expect(playback.phase).toBe("stopping");
+    expect(playback.playbackVisible).toBe(true);
+
+    startup.resolve({ itemId: "item-1", mediaSourceId: "source-1", playMethod: "direct" });
+    await playPromise;
+
+    expect(stopPlayback).toHaveBeenCalledWith(undefined);
+    expect(playback.current).toBeNull();
+    expect(playback.playbackVisible).toBe(false);
+    expect(playback.phase).toBe("idle");
+  });
+
+  it("does not start a second backend playback while the first startup is pending", async () => {
+    const session = useSessionStore();
+    session.activeSession = {
+      server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+      account: { id: "user-1", serverId: "server-1", name: "alice" },
+      accessToken: "token-1",
+    };
+    const startup = deferred<StartPlaybackResult>();
+    vi.mocked(startPlayback).mockReturnValue(startup.promise);
+    const playback = usePlaybackStore();
+
+    const firstPlay = playback.playItem("item-1", { title: "First" });
+    await playback.playItem("item-2", { title: "Second" });
+
+    expect(startPlayback).toHaveBeenCalledTimes(1);
+    expect(playback.current?.itemId).toBe("item-1");
+    expect(playback.mediaTitle).toBe("First");
+
+    startup.resolve({ itemId: "item-1", mediaSourceId: "source-1", playMethod: "direct" });
+    await firstPlay;
+  });
+
+  it("restores the previous playback snapshot when replacing source selection fails", async () => {
+    const session = useSessionStore();
+    session.activeSession = {
+      server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+      account: { id: "user-1", serverId: "server-1", name: "alice" },
+      accessToken: "token-1",
+    };
+    vi.mocked(startPlayback)
+      .mockResolvedValueOnce({ itemId: "episode-1", mediaSourceId: "source-1", playMethod: "direct" })
+      .mockRejectedValueOnce({
+        code: "playback_source_unavailable",
+        message: "no playable source",
+        recoverable: true,
+      });
+    const playback = usePlaybackStore();
+
+    await playback.playItem("episode-1", { title: "Old", durationSeconds: 1200 });
+    playback.phase = "playing";
+    playback.positionSeconds = 120;
+    playback.seekReady = true;
+
+    const playPromise = playback.playItem("episode-2", { title: "New", durationSeconds: 1300 });
+
+    expect(playback.current?.itemId).toBe("episode-2");
+    expect(playback.mediaTitle).toBe("New");
+
+    await playPromise;
+
+    expect(playback.current?.itemId).toBe("episode-1");
+    expect(playback.mediaTitle).toBe("Old");
+    expect(playback.durationSeconds).toBe(1200);
+    expect(playback.positionSeconds).toBe(120);
+    expect(playback.seekReady).toBe(true);
+    expect(playback.phase).toBe("playing");
+    expect(playback.playbackVisible).toBe(true);
+    expect(playback.error?.message).toBe("no playable source");
   });
 
   it("带历史进度启动播放时记录待续播位置，等待媒体可用后跳转", async () => {
@@ -970,3 +1110,14 @@ describe("playback store", () => {
     expect(playback.cacheSizeLabel).toBe("0 KB");
   });
 });
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return { promise, resolve, reject };
+}

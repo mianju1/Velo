@@ -93,6 +93,10 @@ watch(
 );
 
 function togglePaused() {
+  if (!canControlPlayback.value) {
+    return;
+  }
+
   if (playback.paused) {
     void playback.resume();
     return;
@@ -171,20 +175,36 @@ function timelinePointerRatio(event: PointerEvent) {
 }
 
 function onRateChange(event: Event) {
+  if (!canControlPlayback.value) {
+    return;
+  }
+
   void playback.setRate(Number((event.target as HTMLSelectElement).value));
 }
 
 function onSubtitleChange(event: Event) {
+  if (!canControlPlayback.value) {
+    return;
+  }
+
   const value = (event.target as HTMLSelectElement).value;
   focusPlaybackOverlay();
   void playback.selectSubtitle(value === "off" ? null : value);
 }
 
 function onVolumeInput(event: Event) {
+  if (!canControlPlayback.value) {
+    return;
+  }
+
   void playback.setVolume(Number((event.target as HTMLInputElement).value));
 }
 
 function toggleMuted() {
+  if (!canControlPlayback.value) {
+    return;
+  }
+
   void playback.setMuted(!playback.muted);
 }
 
@@ -270,6 +290,7 @@ function onWindowKeyDown(event: KeyboardEvent) {
     key: event.key,
     repeat: event.repeat,
     playbackVisible: playback.playbackVisible,
+    phase: playback.phase,
     targetEditable: isEditableShortcutTarget(event.target),
     fullscreen: playback.fullscreen,
   });
@@ -282,7 +303,7 @@ function onWindowKeyDown(event: KeyboardEvent) {
 }
 
 function onWindowKeyUp(event: KeyboardEvent) {
-  if (!playback.playbackVisible || event.key !== "ArrowRight") {
+  if (!playback.playbackVisible || !canControlPlayback.value || event.key !== "ArrowRight") {
     return;
   }
 
@@ -305,7 +326,7 @@ function onWindowKeyUp(event: KeyboardEvent) {
 }
 
 function runShortcutAction(action: ReturnType<typeof keyboardShortcutAction>) {
-  if (!action) {
+  if (!action || !canControlPlayback.value) {
     return;
   }
 
@@ -416,7 +437,7 @@ function formatRate(value: number) {
       type="button"
       class="icon-button stop-button"
       :class="{ 'stop-button--hidden': toolbarHidden }"
-      :disabled="playback.phase === 'failed'"
+      :disabled="playback.phase === 'failed' || playback.phase === 'stopping'"
       aria-label="停止"
       data-tooltip="停止"
       @click="playback.stop"
@@ -477,7 +498,7 @@ function formatRate(value: number) {
           <button
             type="button"
             class="icon-button control-button"
-            :disabled="playback.phase === 'failed'"
+            :disabled="!canControlPlayback"
             aria-label="播放/暂停"
             :data-tooltip="playback.paused ? '播放' : '暂停'"
             @click="togglePaused"
@@ -493,7 +514,7 @@ function formatRate(value: number) {
             <button
               type="button"
               class="icon-button control-button"
-              :disabled="playback.phase === 'failed'"
+              :disabled="!canControlPlayback"
               aria-label="静音/取消静音"
               data-tooltip="静音/取消静音"
               @click="toggleMuted"
@@ -520,7 +541,7 @@ function formatRate(value: number) {
                 max="100"
                 step="1"
                 :value="playback.volume"
-                :disabled="playback.phase === 'failed'"
+                :disabled="!canControlPlayback"
                 aria-label="音量"
                 @input="onVolumeInput"
               />
@@ -562,7 +583,7 @@ function formatRate(value: number) {
           <button
             type="button"
             class="icon-button control-button"
-            :disabled="!playback.hasPreviousEpisode"
+            :disabled="!playback.hasPreviousEpisode || !canControlPlayback"
             aria-label="上一集"
             data-tooltip="上一集"
             @click="playback.playPreviousEpisode"
@@ -575,7 +596,7 @@ function formatRate(value: number) {
           <button
             type="button"
             class="icon-button control-button"
-            :disabled="!playback.hasNextEpisode"
+            :disabled="!playback.hasNextEpisode || !canControlPlayback"
             aria-label="下一集"
             data-tooltip="下一集"
             @click="playback.playNextEpisode"
@@ -589,7 +610,7 @@ function formatRate(value: number) {
             <button
               type="button"
               class="icon-button control-button"
-              :disabled="playback.episodes.length === 0"
+              :disabled="playback.episodes.length === 0 || !canControlPlayback"
               aria-label="选集"
               data-tooltip="选集"
               @click="toggleEpisodeMenu"
@@ -617,7 +638,7 @@ function formatRate(value: number) {
 
           <label class="compact-field">
             倍速
-            <select :value="playback.rate" :disabled="playback.phase === 'failed'" @change="onRateChange">
+            <select :value="playback.rate" :disabled="!canControlPlayback" @change="onRateChange">
               <option v-for="option in rateOptions" :key="option" :value="option">
                 {{ option }}x
               </option>
@@ -628,7 +649,7 @@ function formatRate(value: number) {
             字幕
             <select
               :value="playback.pendingSubtitleId ?? playback.selectedSubtitleId ?? 'off'"
-              :disabled="playback.phase === 'failed' || playback.pendingSubtitleId !== null"
+              :disabled="!canControlPlayback || playback.pendingSubtitleId !== null"
               @change="onSubtitleChange"
             >
               <option value="off">关闭</option>
@@ -641,7 +662,7 @@ function formatRate(value: number) {
           <button
             type="button"
             class="icon-button control-button"
-            :disabled="playback.phase === 'failed'"
+            :disabled="!canControlPlayback"
             aria-label="全屏"
             :data-tooltip="playback.fullscreen ? '退出全屏' : '全屏'"
             @click="playback.setFullscreen(!playback.fullscreen)"
