@@ -83,6 +83,7 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           prompt-file: .codex-review-prompt.md
           sandbox: read-only
+          model: codex-auto-review
           output-file: codex-review.md
           responses-api-endpoint: "${{ secrets.OPENAI_RESPONSES_API_ENDPOINT || secrets.OPENAI_BASE_URL }}"
 
