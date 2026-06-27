@@ -1,12 +1,13 @@
-#[cfg(target_os = "macos")]
-use std::sync::OnceLock;
 use std::{
     ffi::{c_char, c_double, c_int, c_void, CString},
     path::{Path, PathBuf},
     ptr::NonNull,
+};
+#[cfg(target_os = "macos")]
+use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, OnceLock,
     },
     thread::{self, JoinHandle},
     time::Duration,
@@ -19,6 +20,8 @@ use cocoa::base::{id, nil, YES};
 #[cfg(target_os = "macos")]
 use objc::{class, msg_send, sel, sel_impl};
 
+#[cfg(target_os = "macos")]
+use crate::player::video_surface::{current_size_for_view, VideoSurfaceSize};
 use crate::{
     errors::{AppError, AppResult},
     player::backend::{
@@ -26,7 +29,7 @@ use crate::{
         PlaybackSnapshot, PlayerBackend,
     },
     player::cache::playback_cache_dir,
-    player::video_surface::{current_size_for_view, VideoSurfaceSize, VideoSurfaceTarget},
+    player::video_surface::VideoSurfaceTarget,
     player::window_fit::mpv_autofit_larger_value,
 };
 
@@ -36,6 +39,7 @@ use crate::player::backend::UnavailablePlayerBackend;
 use crate::player::mpv::ExternalMpvBackend;
 
 type MpvHandle = c_void;
+#[cfg(target_os = "macos")]
 type MpvRenderContext = c_void;
 type MpvCreate = unsafe extern "C" fn() -> *mut MpvHandle;
 type MpvInitialize = unsafe extern "C" fn(*mut MpvHandle) -> c_int;
@@ -48,36 +52,52 @@ type MpvSetProperty =
     unsafe extern "C" fn(*mut MpvHandle, *const c_char, c_int, *mut c_void) -> c_int;
 type MpvGetProperty =
     unsafe extern "C" fn(*mut MpvHandle, *const c_char, c_int, *mut c_void) -> c_int;
+#[cfg(target_os = "macos")]
 type MpvRenderContextCreate =
     unsafe extern "C" fn(*mut *mut MpvRenderContext, *mut MpvHandle, *mut MpvRenderParam) -> c_int;
+#[cfg(target_os = "macos")]
 type MpvRenderContextUpdate = unsafe extern "C" fn(*mut MpvRenderContext) -> u64;
+#[cfg(target_os = "macos")]
 type MpvRenderContextRender =
     unsafe extern "C" fn(*mut MpvRenderContext, *mut MpvRenderParam) -> c_int;
+#[cfg(target_os = "macos")]
 type MpvRenderContextReportSwap = unsafe extern "C" fn(*mut MpvRenderContext);
+#[cfg(target_os = "macos")]
 type MpvRenderContextFree = unsafe extern "C" fn(*mut MpvRenderContext);
 #[cfg(target_os = "macos")]
 type GlViewport = unsafe extern "C" fn(c_int, c_int, c_int, c_int);
 
 const MPV_FORMAT_FLAG: c_int = 3;
 const MPV_FORMAT_DOUBLE: c_int = 5;
+#[cfg(target_os = "macos")]
 const MPV_RENDER_PARAM_INVALID: c_int = 0;
+#[cfg(target_os = "macos")]
 const MPV_RENDER_PARAM_API_TYPE: c_int = 1;
+#[cfg(target_os = "macos")]
 const MPV_RENDER_PARAM_OPENGL_INIT_PARAMS: c_int = 2;
+#[cfg(target_os = "macos")]
 const MPV_RENDER_PARAM_OPENGL_FBO: c_int = 3;
+#[cfg(target_os = "macos")]
 const MPV_RENDER_PARAM_FLIP_Y: c_int = 4;
+#[cfg(target_os = "macos")]
 const MPV_RENDER_UPDATE_FRAME: u64 = 1;
+#[cfg(target_os = "macos")]
 const GL_RGBA8: c_int = 0x8058;
+#[cfg(target_os = "macos")]
 const MPV_RENDER_API_TYPE_OPENGL: &[u8] = b"opengl\0";
+#[cfg(target_os = "macos")]
 const RENDER_WATCHDOG_TICKS: u32 = 30;
 const STARTUP_CACHE_SECONDS: u32 = 15;
 const STEADY_CACHE_SECONDS: u32 = 30;
 
+#[cfg(target_os = "macos")]
 #[repr(C)]
 struct MpvRenderParam {
     param_type: c_int,
     data: *mut c_void,
 }
 
+#[cfg(target_os = "macos")]
 #[repr(C)]
 struct MpvOpenGlInitParams {
     get_proc_address:
@@ -85,6 +105,7 @@ struct MpvOpenGlInitParams {
     get_proc_address_ctx: *mut c_void,
 }
 
+#[cfg(target_os = "macos")]
 #[repr(C)]
 struct MpvOpenGlFbo {
     fbo: c_int,
@@ -93,6 +114,7 @@ struct MpvOpenGlFbo {
     internal_format: c_int,
 }
 
+#[cfg(target_os = "macos")]
 fn open_gl_api_type_param() -> MpvRenderParam {
     MpvRenderParam {
         param_type: MPV_RENDER_PARAM_API_TYPE,
@@ -107,6 +129,7 @@ pub struct LibMpvBackend {
     _library: Library,
     symbols: LibMpvSymbols,
     handle: NonNull<MpvHandle>,
+    #[cfg(target_os = "macos")]
     renderer: Option<MpvOpenGlRenderer>,
     initialized: bool,
     video_surface_attached: bool,
@@ -124,10 +147,15 @@ struct LibMpvSymbols {
     mpv_get_property: MpvGetProperty,
     mpv_set_option_string: MpvSetOptionString,
     mpv_set_property: MpvSetProperty,
+    #[cfg(target_os = "macos")]
     mpv_render_context_create: MpvRenderContextCreate,
+    #[cfg(target_os = "macos")]
     mpv_render_context_update: MpvRenderContextUpdate,
+    #[cfg(target_os = "macos")]
     mpv_render_context_render: MpvRenderContextRender,
+    #[cfg(target_os = "macos")]
     mpv_render_context_report_swap: MpvRenderContextReportSwap,
+    #[cfg(target_os = "macos")]
     mpv_render_context_free: MpvRenderContextFree,
 }
 
@@ -171,19 +199,24 @@ impl LibMpvBackend {
         let mpv_get_property: MpvGetProperty =
             *unsafe { library.get::<MpvGetProperty>(b"mpv_get_property\0") }
                 .map_err(libmpv_symbol_error)?;
+        #[cfg(target_os = "macos")]
         let mpv_render_context_create: MpvRenderContextCreate =
             *unsafe { library.get::<MpvRenderContextCreate>(b"mpv_render_context_create\0") }
                 .map_err(libmpv_symbol_error)?;
+        #[cfg(target_os = "macos")]
         let mpv_render_context_update: MpvRenderContextUpdate =
             *unsafe { library.get::<MpvRenderContextUpdate>(b"mpv_render_context_update\0") }
                 .map_err(libmpv_symbol_error)?;
+        #[cfg(target_os = "macos")]
         let mpv_render_context_render: MpvRenderContextRender =
             *unsafe { library.get::<MpvRenderContextRender>(b"mpv_render_context_render\0") }
                 .map_err(libmpv_symbol_error)?;
+        #[cfg(target_os = "macos")]
         let mpv_render_context_report_swap: MpvRenderContextReportSwap = *unsafe {
             library.get::<MpvRenderContextReportSwap>(b"mpv_render_context_report_swap\0")
         }
         .map_err(libmpv_symbol_error)?;
+        #[cfg(target_os = "macos")]
         let mpv_render_context_free: MpvRenderContextFree =
             *unsafe { library.get::<MpvRenderContextFree>(b"mpv_render_context_free\0") }
                 .map_err(libmpv_symbol_error)?;
@@ -224,19 +257,33 @@ impl LibMpvBackend {
                 mpv_get_property,
                 mpv_set_option_string,
                 mpv_set_property,
+                #[cfg(target_os = "macos")]
                 mpv_render_context_create,
+                #[cfg(target_os = "macos")]
                 mpv_render_context_update,
+                #[cfg(target_os = "macos")]
                 mpv_render_context_render,
+                #[cfg(target_os = "macos")]
                 mpv_render_context_report_swap,
+                #[cfg(target_os = "macos")]
                 mpv_render_context_free,
             },
             handle,
+            #[cfg(target_os = "macos")]
             renderer: None,
             initialized: false,
             video_surface_attached: false,
             snapshot: PlaybackSnapshot::default(),
         })
     }
+
+    #[cfg(target_os = "macos")]
+    fn clear_renderer(&mut self) {
+        self.renderer = None;
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn clear_renderer(&mut self) {}
 
     fn initialize(&mut self) -> AppResult<()> {
         if self.initialized {
@@ -337,7 +384,7 @@ impl LibMpvBackend {
 
 impl PlayerBackend for LibMpvBackend {
     fn attach_video_surface(&mut self, target: VideoSurfaceTarget) -> AppResult<()> {
-        self.renderer = None;
+        self.clear_renderer();
         attach_native_video_surface(self, target)?;
         self.video_surface_attached = true;
         Ok(())
@@ -362,7 +409,7 @@ impl PlayerBackend for LibMpvBackend {
 
     fn stop(&mut self) -> AppResult<()> {
         if !self.initialized {
-            self.renderer = None;
+            self.clear_renderer();
             self.video_surface_attached = false;
             self.snapshot.loaded_url = None;
             self.snapshot.position_seconds = 0.0;
@@ -371,7 +418,7 @@ impl PlayerBackend for LibMpvBackend {
         }
 
         let result = self.command(&["stop"]);
-        self.renderer = None;
+        self.clear_renderer();
         self.video_surface_attached = false;
         self.snapshot.loaded_url = None;
         self.snapshot.position_seconds = 0.0;
@@ -499,7 +546,7 @@ impl PlayerBackend for LibMpvBackend {
 
 impl Drop for LibMpvBackend {
     fn drop(&mut self) {
-        self.renderer = None;
+        self.clear_renderer();
         self.video_surface_attached = false;
         unsafe { (self.symbols.mpv_destroy)(self.handle.as_ptr()) };
     }
@@ -548,6 +595,7 @@ fn attach_native_video_surface(
     ))
 }
 
+#[cfg(target_os = "macos")]
 struct MpvOpenGlRenderer {
     render_context: NonNull<MpvRenderContext>,
     gl_view: usize,
@@ -557,8 +605,10 @@ struct MpvOpenGlRenderer {
     mpv_render_context_free: MpvRenderContextFree,
 }
 
+#[cfg(target_os = "macos")]
 unsafe impl Send for MpvOpenGlRenderer {}
 
+#[cfg(target_os = "macos")]
 impl MpvOpenGlRenderer {
     fn new(
         handle: NonNull<MpvHandle>,
@@ -622,6 +672,7 @@ impl MpvOpenGlRenderer {
     }
 }
 
+#[cfg(target_os = "macos")]
 impl Drop for MpvOpenGlRenderer {
     fn drop(&mut self) {
         self.running.store(false, Ordering::SeqCst);
@@ -636,6 +687,7 @@ impl Drop for MpvOpenGlRenderer {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn spawn_render_thread(
     render_context: NonNull<MpvRenderContext>,
     target: VideoSurfaceTarget,
@@ -695,6 +747,7 @@ fn spawn_render_thread(
     })
 }
 
+#[cfg(target_os = "macos")]
 fn should_render_frame(update_flags: u64, ticks_since_render: u32) -> bool {
     update_flags & MPV_RENDER_UPDATE_FRAME != 0 || ticks_since_render >= RENDER_WATCHDOG_TICKS
 }
@@ -722,9 +775,6 @@ fn make_open_gl_context_current(open_gl_context: usize) {
         let _: () = msg_send![context, makeCurrentContext];
     }
 }
-
-#[cfg(not(target_os = "macos"))]
-fn make_open_gl_context_current(_open_gl_context: usize) {}
 
 #[cfg(target_os = "macos")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -770,9 +820,6 @@ fn update_open_gl_context(open_gl_context: usize) {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-fn update_open_gl_context(_open_gl_context: usize) {}
-
 #[cfg(target_os = "macos")]
 fn is_main_thread() -> bool {
     unsafe { msg_send![class!(NSThread), isMainThread] }
@@ -790,9 +837,6 @@ fn flush_open_gl_context(open_gl_context: usize) {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-fn flush_open_gl_context(_open_gl_context: usize) {}
-
 #[cfg(target_os = "macos")]
 fn set_open_gl_viewport(width: u32, height: u32) {
     let name = b"glViewport\0";
@@ -804,9 +848,6 @@ fn set_open_gl_viewport(width: u32, height: u32) {
     let gl_viewport: GlViewport = unsafe { std::mem::transmute(symbol) };
     unsafe { gl_viewport(0, 0, width.max(1) as c_int, height.max(1) as c_int) };
 }
-
-#[cfg(not(target_os = "macos"))]
-fn set_open_gl_viewport(_width: u32, _height: u32) {}
 
 #[cfg(target_os = "macos")]
 fn remove_video_view(ns_view: usize) {
@@ -824,9 +865,6 @@ fn remove_video_view(ns_view: usize) {
         ];
     }
 }
-
-#[cfg(not(target_os = "macos"))]
-fn remove_video_view(_ns_view: usize) {}
 
 #[cfg(target_os = "macos")]
 unsafe extern "C" fn get_open_gl_proc_address(
@@ -852,14 +890,6 @@ unsafe extern "C" fn get_open_gl_proc_address(
     } else {
         symbol
     }
-}
-
-#[cfg(not(target_os = "macos"))]
-unsafe extern "C" fn get_open_gl_proc_address(
-    _ctx: *mut c_void,
-    _name: *const c_char,
-) -> *mut c_void {
-    std::ptr::null_mut()
 }
 
 fn libmpv_symbol_error(error: libloading::Error) -> AppError {
@@ -1252,6 +1282,7 @@ fn get_property(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "macos")]
     use std::ffi::CStr;
     use std::path::PathBuf;
 
@@ -1260,8 +1291,7 @@ mod tests {
     use super::{
         create_player_backend, libmpv_disk_cache_options_for_dir,
         libmpv_library_candidates_for_executable, mpv_error, LibMpvBackend, PlayerBackendMode,
-        MPV_RENDER_API_TYPE_OPENGL, MPV_RENDER_PARAM_API_TYPE, STARTUP_CACHE_SECONDS,
-        STEADY_CACHE_SECONDS,
+        STARTUP_CACHE_SECONDS, STEADY_CACHE_SECONDS,
     };
 
     fn normalize_candidate_paths(candidates: Vec<String>) -> Vec<String> {
@@ -1377,6 +1407,7 @@ mod tests {
         assert_eq!(super::MPV_FORMAT_DOUBLE, 5);
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn render_loop_draws_periodically_even_without_update_flag() {
         assert!(super::should_render_frame(0, super::RENDER_WATCHDOG_TICKS));
@@ -1447,13 +1478,17 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn open_gl_api_type_param_passes_api_name_as_char_pointer() {
         let param = super::open_gl_api_type_param();
 
-        assert_eq!(param.param_type, MPV_RENDER_PARAM_API_TYPE);
+        assert_eq!(param.param_type, super::MPV_RENDER_PARAM_API_TYPE);
         let api_name = unsafe { CStr::from_ptr(param.data.cast_const().cast()) };
-        assert_eq!(api_name.to_bytes_with_nul(), MPV_RENDER_API_TYPE_OPENGL);
+        assert_eq!(
+            api_name.to_bytes_with_nul(),
+            super::MPV_RENDER_API_TYPE_OPENGL
+        );
     }
 
     #[test]
