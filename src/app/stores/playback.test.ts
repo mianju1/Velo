@@ -478,6 +478,64 @@ describe("playback store", () => {
     expect(playback.positionSeconds).toBe(3);
   });
 
+  it("enters playing when runtime is ready even if position remains zero", async () => {
+    const session = useSessionStore();
+    session.activeSession = {
+      server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+      account: { id: "user-1", serverId: "server-1", name: "alice" },
+      accessToken: "token-1",
+    };
+    vi.mocked(startPlayback).mockResolvedValue({
+      itemId: "item-1",
+      mediaSourceId: "source-1",
+      playMethod: "direct",
+    });
+    vi.mocked(getPlaybackStatus).mockResolvedValue({
+      coreReady: true,
+      mediaLoaded: true,
+      paused: false,
+      pausedForCache: false,
+      cacheSpeedBytesPerSecond: null,
+      positionSeconds: 0,
+    });
+    const playback = usePlaybackStore();
+
+    await playback.playItem("item-1");
+    await playback.refreshStatus();
+
+    expect(playback.phase).toBe("playing");
+    expect(playback.positionSeconds).toBe(0);
+  });
+
+  it("keeps loading when runtime is paused for cache at position zero", async () => {
+    const session = useSessionStore();
+    session.activeSession = {
+      server: { id: "server-1", name: "Home", url: "https://emby.example.test" },
+      account: { id: "user-1", serverId: "server-1", name: "alice" },
+      accessToken: "token-1",
+    };
+    vi.mocked(startPlayback).mockResolvedValue({
+      itemId: "item-1",
+      mediaSourceId: "source-1",
+      playMethod: "direct",
+    });
+    vi.mocked(getPlaybackStatus).mockResolvedValue({
+      coreReady: true,
+      mediaLoaded: true,
+      paused: false,
+      pausedForCache: true,
+      cacheSpeedBytesPerSecond: 1_572_864,
+      positionSeconds: 0,
+    });
+    const playback = usePlaybackStore();
+
+    await playback.playItem("item-1");
+    await playback.refreshStatus();
+
+    expect(playback.phase).toBe("loadingVideo");
+    expect(playback.loadingDetail).toBe("下行速度 1.5 MB/s");
+  });
+
   it("进入稳定播放后仅放大一次缓存配置", async () => {
     const session = useSessionStore();
     session.activeSession = {
