@@ -4,6 +4,7 @@ import {
   formatPlaybackMinuteTime,
   formatPlaybackTime,
   keyboardShortcutAction,
+  shouldUsePlaybackLoadingBackdrop,
   shouldRenderPlaybackOverlay,
   isPointerInToolbarRevealZone,
   progressPercent,
@@ -12,6 +13,7 @@ import {
   RIGHT_ARROW_HOLD_SPEED_DELAY_MS,
   TOOLBAR_HIDE_DELAY_MS,
 } from "./playback-controls";
+import playbackControlsSource from "./PlaybackControls.vue?raw";
 
 describe("播放控制栏辅助逻辑", () => {
   it("格式化播放时间", () => {
@@ -69,6 +71,21 @@ describe("播放控制栏辅助逻辑", () => {
   it("播放层可见时需要渲染事件覆盖层", () => {
     expect(shouldRenderPlaybackOverlay(true)).toBe(true);
     expect(shouldRenderPlaybackOverlay(false)).toBe(false);
+  });
+
+  it("uses a black backdrop only while the video is loading", () => {
+    expect(shouldUsePlaybackLoadingBackdrop("creatingKernel", false)).toBe(true);
+    expect(shouldUsePlaybackLoadingBackdrop("loadingVideo", false)).toBe(true);
+    expect(shouldUsePlaybackLoadingBackdrop("loadingVideo", true)).toBe(false);
+    expect(shouldUsePlaybackLoadingBackdrop("playing", true)).toBe(false);
+    expect(shouldUsePlaybackLoadingBackdrop("failed", false)).toBe(false);
+  });
+
+  it("defines an opaque black loading backdrop for the playback overlay", () => {
+    const loadingBackdropRule =
+      playbackControlsSource.match(/\.playback-overlay--loading\s*\{(?<body>[^}]+)\}/)?.groups?.body ?? "";
+
+    expect(loadingBackdropRule).toContain("background: #000");
   });
 
   it("只有播放窗口可见且焦点不在输入控件时才响应快捷键", () => {
