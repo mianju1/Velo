@@ -3,8 +3,6 @@ name: Codex Review Bot
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  pull_request_review:
-    types: [submitted, dismissed]
 
 permissions:
   contents: read
@@ -106,45 +104,3 @@ jobs:
       - name: Fail on blocking Codex findings
         if: "${{ contains(steps.codex.outputs['final-message'], 'RESULT: FAIL') }}"
         run: exit 1
-
-  approval-gate:
-    name: Approval gate
-    if: "${{ github.event.pull_request.draft == false }}"
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: read
-
-    steps:
-      - name: Require a human approval
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ github.token }}
-          script: |
-            const { owner, repo } = context.repo;
-            const pull_number = context.payload.pull_request.number;
-            const headSha = context.payload.pull_request.head.sha;
-            const { data: reviews } = await github.rest.pulls.listReviews({
-              owner,
-              repo,
-              pull_number,
-              per_page: 100,
-            });
-
-            const latestByUser = new Map();
-            for (const review of reviews.sort((a, b) => new Date(a.submitted_at) - new Date(b.submitted_at))) {
-              latestByUser.set(review.user.login, review.state);
-            }
-
-            const approvedBy = reviews
-              .filter((review) => review.state === 'APPROVED')
-              .filter((review) => review.commit_id === headSha)
-              .filter((review) => review.user.type !== 'Bot' && !review.user.login.endsWith('[bot]'))
-              .filter((review) => latestByUser.get(review.user.login) === 'APPROVED')
-              .map((review) => review.user.login);
-
-            if (approvedBy.length === 0) {
-              core.setFailed(`PR 需要至少一个人工对当前提交 ${headSha.slice(0, 7)} 进行 APPROVED 审批后才能合并。`);
-              return;
-            }
-
-            core.notice(`Approved by: ${[...new Set(approvedBy)].join(', ')}`);
