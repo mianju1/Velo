@@ -102,5 +102,5 @@ jobs:
             });
 
       - name: Fail on blocking Codex findings
-        if: "${{ contains(steps.codex.outputs['final-message'], 'RESULT: FAIL') }}"
+        if: "${{ contains(steps.codex.outputs['final-message'], 'RESULT: FAIL') || contains(steps.codex.outputs['final-message'], 'RESULT：FAIL') }}"
         run: exit 1
