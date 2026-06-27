@@ -1120,14 +1120,41 @@ h2 {
 }
 
 .settings-about {
-  justify-items: start;
+  min-height: 280px;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 24px 0 32px;
+  text-align: center;
 }
 
 .settings-about img {
-  width: 64px;
-  height: 64px;
-  border-radius: 16px;
-  box-shadow: 0 12px 26px rgba(29, 127, 194, 0.22);
+  width: 78px;
+  height: 78px;
+  border-radius: 20px;
+  box-shadow: 0 16px 34px rgba(29, 127, 194, 0.24);
+}
+
+.settings-about strong {
+  margin-top: 4px;
+  color: var(--text-primary);
+  font-size: 24px;
+  line-height: 1.15;
+}
+
+.settings-about-version {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 12px;
+  color: var(--text-secondary);
+  background: var(--surface-muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .media-sidebar-svg {
