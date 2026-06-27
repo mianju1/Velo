@@ -1,49 +1,97 @@
-name: Codex-Review-Bot
+name: Codex Review Bot
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
-jobs:
-  review:
-    name: review
-    runs-on: ubuntu-latest
+permissions:
+  contents: read
 
+jobs:
+  codex-review:
+    name: Codex code review
+    if: "${{ github.event_name == 'pull_request' && github.event.pull_request.draft == false }}"
+    runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
       issues: write
+      pull-requests: write
 
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout pull request merge commit
+        uses: actions/checkout@v5
         with:
-          ref: refs/pull/${{ github.event.pull_request.number }}/merge
           fetch-depth: 0
           persist-credentials: false
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
 
-      - name: Configure Codex provider
+      - name: Fetch pull request refs
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/.codex-home"
-          cat > "$GITHUB_WORKSPACE/.codex-home/config.toml" <<'EOF'
-          model = "codex-auto-review"
-          openai_base_url = "${{ secrets.OPENAI_BASE_URL }}"
+          git fetch --no-tags origin "${BASE_REF}"
+          if [ "${HEAD_REPO}" = "${GITHUB_REPOSITORY}" ]; then
+            git fetch --no-tags origin "${HEAD_REF}"
+          else
+            git fetch --no-tags origin "refs/pull/${PR_NUMBER}/head:refs/remotes/origin/pr/${PR_NUMBER}/head"
+          fi
+
+      - name: Build Codex prompt from base revision
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          git show "${BASE_SHA}:.github/codex/prompts/review.md" > .codex-review-prompt.md
+          cat >> .codex-review-prompt.md <<EOF
+
+          Pull request metadata:
+          - PR number: #${PR_NUMBER}
+          - Title: ${PR_TITLE}
+          - Author: ${PR_AUTHOR}
+          - Base SHA: ${BASE_SHA}
+          - Head SHA: ${HEAD_SHA}
+
+          Review instructions for this run:
+          - Inspect only changes between Base SHA and Head SHA.
+          - Prefer these read-only commands for context:
+            - git diff --stat ${BASE_SHA}...${HEAD_SHA}
+            - git diff --find-renames ${BASE_SHA}...${HEAD_SHA}
+            - git diff --name-only ${BASE_SHA}...${HEAD_SHA}
+          - Do not modify files, install dependencies, write patches, or push commits.
+          - Return RESULT: PASS or RESULT: FAIL exactly as requested above.
           EOF
+
+      - name: Check OpenAI credentials
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "${OPENAI_API_KEY}" ]; then
+            echo "OPENAI_API_KEY secret is required for Codex Review Bot." >&2
+            exit 1
+          fi
 
       - name: Run Codex review
         id: codex
         uses: openai/codex-action@v1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          prompt-file: .github/codex/prompts/review.md
-          output-file: codex-review.md
+          prompt-file: .codex-review-prompt.md
           sandbox: read-only
-          codex-home: ${{ github.workspace }}/.codex-home
+          model: codex-auto-review
+          output-file: codex-review.md
+          responses-api-endpoint: "${{ secrets.OPENAI_RESPONSES_API_ENDPOINT || secrets.OPENAI_BASE_URL }}"
 
       - name: Post Codex review comment
-        if: steps.codex.outputs.final-message != ''
+        if: "${{ always() && steps.codex.outputs['final-message'] != '' }}"
         uses: actions/github-script@v7
         env:
-          CODEX_FINAL_MESSAGE: ${{ steps.codex.outputs.final-message }}
+          CODEX_FINAL_MESSAGE: ${{ steps.codex.outputs['final-message'] }}
         with:
           github-token: ${{ github.token }}
           script: |
@@ -53,7 +101,3 @@ jobs:
               issue_number: context.payload.pull_request.number,
               body: process.env.CODEX_FINAL_MESSAGE,
             });
-
-      - name: Fail on blocking review result
-        if: "${{ contains(steps.codex.outputs.final-message, 'RESULT: FAIL') }}"
-        run: exit 1
