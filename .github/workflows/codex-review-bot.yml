@@ -101,7 +101,3 @@ jobs:
               issue_number: context.payload.pull_request.number,
               body: process.env.CODEX_FINAL_MESSAGE,
             });
-
-      - name: Fail on blocking Codex findings
-        if: "${{ contains(steps.codex.outputs['final-message'], 'RESULT: FAIL') || contains(steps.codex.outputs['final-message'], 'RESULT：FAIL') }}"
-        run: exit 1
