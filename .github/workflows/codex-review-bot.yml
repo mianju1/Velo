@@ -36,17 +36,23 @@ jobs:
           env_key = "OPENAI_API_KEY"
           EOF
 
+      - name: Install Codex CLI
+        run: |
+          curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Run Codex review
         id: codex
-        uses: openai/codex-action@v1
         env:
+          CODEX_HOME: ${{ github.workspace }}/.codex-home
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        with:
-          model: codex-auto-review
-          prompt-file: .github/codex/prompts/review.md
-          output-file: codex-review.md
-          sandbox: read-only
-          codex-home: ${{ github.workspace }}/.codex-home
+        run: |
+          codex exec --ephemeral --sandbox read-only --model codex-auto-review -o codex-review.md "$(cat .github/codex/prompts/review.md)"
+          {
+            echo 'final-message<<EOF'
+            cat codex-review.md
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Post Codex review comment
         if: steps.codex.outputs.final-message != ''
