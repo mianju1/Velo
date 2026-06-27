@@ -21,23 +21,16 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Configure Codex provider
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/.codex-home"
-          cat > "$GITHUB_WORKSPACE/.codex-home/config.toml" <<'EOF'
-          model = "codex-auto-review"
-          openai_base_url = "${{ secrets.OPENAI_BASE_URL }}"
-          EOF
-
       - name: Run Codex review
         id: codex
         uses: openai/codex-action@v1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          responses-api-endpoint: ${{ secrets.OPENAI_RESPONSES_API_ENDPOINT }}
+          model: codex-auto-review
           prompt-file: .github/codex/prompts/review.md
           output-file: codex-review.md
           sandbox: read-only
-          codex-home: ${{ github.workspace }}/.codex-home
 
       - name: Post Codex review comment
         if: steps.codex.outputs.final-message != ''
