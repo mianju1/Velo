@@ -39,7 +39,7 @@ jobs:
             git fetch --no-tags origin "refs/pull/${PR_NUMBER}/head:refs/remotes/origin/pr/${PR_NUMBER}/head"
           fi
 
-      - name: Build Codex prompt
+      - name: Build Codex prompt from base revision
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -47,7 +47,7 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
-          cat .github/codex/prompts/review.md > .codex-review-prompt.md
+          git show "${BASE_SHA}:.github/codex/prompts/review.md" > .codex-review-prompt.md
           cat >> .codex-review-prompt.md <<EOF
 
           Pull request metadata:
