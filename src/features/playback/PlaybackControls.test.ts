@@ -734,6 +734,41 @@ describe("PlaybackControls", () => {
     expect(stopPlayback).toHaveBeenCalled();
   });
 
+  it("disables playback controls and shortcuts while stopping", async () => {
+    const pinia = createPinia();
+    const root = document.createElement("div");
+    document.body.append(root);
+    app = createApp(PlaybackControls);
+    app.use(pinia);
+    app.mount(root);
+
+    const playback = usePlaybackStore(pinia);
+    playback.current = {
+      itemId: "item-1",
+      mediaSourceId: "source-1",
+      playMethod: "direct",
+    };
+    playback.phase = "stopping";
+    playback.seekReady = true;
+    await nextTick();
+
+    const stopButton = root.querySelector<HTMLButtonElement>(".stop-button");
+    const pauseButton = root.querySelector<HTMLButtonElement>(".playback-main .control-button");
+    expect(stopButton?.disabled).toBe(true);
+    expect(pauseButton?.disabled).toBe(true);
+
+    stopButton?.click();
+    pauseButton?.click();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "f" }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp" }));
+
+    expect(stopPlayback).not.toHaveBeenCalled();
+    expect(pausePlayback).not.toHaveBeenCalled();
+    expect(setPlaybackFullscreen).not.toHaveBeenCalled();
+    expect(setPlaybackVolume).not.toHaveBeenCalled();
+  });
+
   it("右方向键在 0.5 秒内松开时只快进 15 秒", async () => {
     vi.useFakeTimers();
     const pinia = createPinia();
